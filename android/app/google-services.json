@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "190557213335",
+    "project_id": "txtheta",
+    "storage_bucket": "txtheta.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:190557213335:android:134cc2c9ed634e49588fd2",
+        "android_client_info": {
+          "package_name": "com.example.phi"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "190557213335-dvss7rc7qppkb997jb25j0mfm6ri8hc0.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.phi",
+            "certificate_hash": "f73d3e2dadd6a70fc2eec740f1664449681d513b"
+          }
+        },
+        {
+          "client_id": "190557213335-ilelbj8hj2r38oe0srkmfe9ttedheqg2.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCw3mR8-uIHrcGGIhP8nmo0CPgDfArvc2Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "190557213335-ilelbj8hj2r38oe0srkmfe9ttedheqg2.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "190557213335-vvsoo3anga34esjadv9fiuko28lsj4lr.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.phi"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
