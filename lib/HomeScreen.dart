@@ -6,7 +6,7 @@ import 'Responsibility.dart';
 import 'ResponsibilityCard.dart';
 import 'ResponsibilityService.dart';
 import 'VerificationNotificationService.dart';
-import 'main.dart';
+import 'main.dart'; // Contiene rootScaffoldMessengerKey y pendingNotificationAction
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -75,12 +75,9 @@ class _HomeScreenState extends State<HomeScreen> {
         await _processNotYet(action);
       }
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
+      // USAMOS LA LLAVE GLOBAL PARA GARANTIZAR EL MENSAJE DE ERROR
+      rootScaffoldMessengerKey.currentState
+        ?..hideCurrentSnackBar()
         ..showSnackBar(
           const SnackBar(
             content: Text(
@@ -132,12 +129,9 @@ class _HomeScreenState extends State<HomeScreen> {
       actionSelected: action.actionId,
     );
 
-    if (!mounted) {
-      return;
-    }
-
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
+    // USAMOS LA LLAVE GLOBAL PARA GARANTIZAR QUE EL SNACKBAR APAREZCA SIEMPRE
+    rootScaffoldMessengerKey.currentState
+      ?..hideCurrentSnackBar()
       ..showSnackBar(
         const SnackBar(
           content: Text(

@@ -250,6 +250,19 @@ Future<void> showPastStartSelector(
     if (time == null) return;
 
     finalDate = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+
+    // --- BLOQUEO B4: IMPEDIR HORAS FUTURAS ---
+    if (finalDate.isAfter(DateTime.now())) {
+      rootScaffoldMessengerKey.currentState
+        ?..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('No puedes registrar un inicio en el futuro.'),
+          ),
+        );
+      return; // Detenemos la función, no se guarda nada en Firestore.
+    }
+    // -----------------------------------------
   }
 
   // 3. Guardamos en base de datos y usamos la LLAVE GLOBAL blindada
