@@ -15,6 +15,43 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _service = ResponsibilityService();
 
+  Future<void> _logout() async {
+    try {
+      await FirebaseAuth.instance.signOut();
+
+      // No uses Navigator aquí.
+      // AuthGate debe detectar el cierre de sesión y mostrar LoginScreen.
+    } on FirebaseAuthException catch (error, stackTrace) {
+      debugPrint(
+        'Error de Firebase Auth al cerrar sesión: ${error.code}',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No se pudo cerrar la sesión. Inténtalo de nuevo.',
+          ),
+        ),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Error inesperado al cerrar sesión: $error');
+      debugPrintStack(stackTrace: stackTrace);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No se pudo cerrar la sesión. Inténtalo de nuevo.',
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -23,7 +60,8 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: () => FirebaseAuth.instance.signOut(),
+            tooltip: 'Cerrar sesión',
+            onPressed: _logout,
           ),
         ],
       ),

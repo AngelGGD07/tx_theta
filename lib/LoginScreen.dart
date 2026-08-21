@@ -1,9 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'AppColors.dart';
+import 'package:phi/AppColors.dart';
 import 'package:phi/GoogleSignInButton.dart';
-import 'package:phi/HomeScreen.dart';
 
 /// -----------------------------------------------------------------------
 /// Idiomas soportados. Se puede ampliar fácilmente agregando más entradas.
@@ -27,6 +27,12 @@ class _Strings {
       'welcome_back': '¡Bienvenido de nuevo!',
       'account_created': '¡Cuenta creada con éxito!',
       'generic_error': 'Ocurrió un error',
+      'no_internet': 'No se pudo conectar. Revisa tu conexión a internet e inténtalo de nuevo.',
+      'error_invalid_credentials': 'Correo o contraseña incorrectos.',
+      'error_invalid_email': 'El correo no tiene un formato válido.',
+      'error_email_in_use': 'Ya existe una cuenta con ese correo.',
+      'error_weak_password': 'La contraseña es muy débil. Usa al menos 6 caracteres.',
+      'error_too_many_requests': 'Demasiados intentos. Espera un momento e inténtalo de nuevo.',
     },
     AppLanguage.en: {
       'tagline': 'Best Planner',
@@ -43,6 +49,12 @@ class _Strings {
       'welcome_back': 'Welcome back!',
       'account_created': 'Account created successfully!',
       'generic_error': 'Something went wrong',
+      'no_internet': "Couldn't connect. Check your internet connection and try again.",
+      'error_invalid_credentials': 'Incorrect email or password.',
+      'error_invalid_email': "That email doesn't look valid.",
+      'error_email_in_use': 'An account with that email already exists.',
+      'error_weak_password': 'Password is too weak. Use at least 6 characters.',
+      'error_too_many_requests': 'Too many attempts. Please wait a moment and try again.',
     },
   };
 
@@ -69,9 +81,40 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _isLogin = true;
   bool _isLoading = false;
+  bool _obscurePassword = true;
   AppLanguage _lang = AppLanguage.es;
 
   String _t(String key) => _Strings.t(_lang, key);
+
+  /// Traduce errores comunes de Firebase Auth a mensajes claros en el
+  /// idioma actual, en vez de mostrar el texto crudo (en inglés) que
+  /// devuelve Firebase por defecto.
+  String _friendlyAuthError(Object error) {
+    if (error is TimeoutException) {
+      return _t('no_internet');
+    }
+    if (error is FirebaseAuthException) {
+      switch (error.code) {
+        case 'network-request-failed':
+          return _t('no_internet');
+        case 'invalid-email':
+          return _t('error_invalid_email');
+        case 'user-not-found':
+        case 'wrong-password':
+        case 'invalid-credential':
+          return _t('error_invalid_credentials');
+        case 'email-already-in-use':
+          return _t('error_email_in_use');
+        case 'weak-password':
+          return _t('error_weak_password');
+        case 'too-many-requests':
+          return _t('error_too_many_requests');
+        default:
+          return error.message ?? _t('generic_error');
+      }
+    }
+    return _t('generic_error');
+  }
 
   // --------------------------- AUTENTICACIÓN ---------------------------
 
@@ -79,22 +122,28 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
     try {
       if (_isLogin) {
-        await _auth.signInWithEmailAndPassword(
+        await _auth
+            .signInWithEmailAndPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
-        );
+        )
+            .timeout(const Duration(seconds: 15));
+
+        if (!mounted) return;
         _showMessage(_t('welcome_back'));
-        _goHome();
       } else {
-        await _auth.createUserWithEmailAndPassword(
+        await _auth
+            .createUserWithEmailAndPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
-        );
+        )
+            .timeout(const Duration(seconds: 15));
+
+        if (!mounted) return;
         _showMessage(_t('account_created'));
-        _goHome();
       }
-    } on FirebaseAuthException catch (e) {
-      _showMessage(e.message ?? _t('generic_error'));
+    } catch (e) {
+      _showMessage(_friendlyAuthError(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -103,7 +152,8 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _signInWithGoogle() async {
     setState(() => _isLoading = true);
     try {
-      final googleUser = await _googleSignIn.signIn();
+      final googleUser =
+      await _googleSignIn.signIn().timeout(const Duration(seconds: 15));
       if (googleUser == null) {
         setState(() => _isLoading = false);
         return;
@@ -113,23 +163,17 @@ class _LoginScreenState extends State<LoginScreen> {
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
-      await _auth.signInWithCredential(credential);
+      await _auth
+          .signInWithCredential(credential)
+          .timeout(const Duration(seconds: 15));
+
+      if (!mounted) return;
       _showMessage(_t('welcome_back'));
-      _goHome();
-    } on FirebaseAuthException catch (e) {
-      _showMessage(e.message ?? _t('generic_error'));
-    } catch (_) {
-      _showMessage(_t('generic_error'));
+    } catch (e) {
+      _showMessage(_friendlyAuthError(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  void _goHome() {
-    if (!mounted) return;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const HomeScreen()),
-    );
   }
 
   void _showMessage(String message) {
@@ -305,7 +349,23 @@ class _LoginScreenState extends State<LoginScreen> {
               palette: palette,
               controller: _passwordController,
               label: _t('password'),
-              obscureText: true,
+              obscureText: _obscurePassword,
+              suffixIcon: IconButton(
+                onPressed: () =>
+                    setState(() => _obscurePassword = !_obscurePassword),
+                icon: Image.asset(
+                  _obscurePassword
+                      ? 'assets/eye_closed.png'
+                      : 'assets/eye_open.png',
+                  width: 22,
+                  height: 22,
+                  errorBuilder: (context, error, stackTrace) => Icon(
+                    _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                    color: palette.textMuted,
+                    size: 22,
+                  ),
+                ),
+              ),
             ),
             const SizedBox(height: 24),
             _isLoading
@@ -357,6 +417,7 @@ class _LoginScreenState extends State<LoginScreen> {
     required String label,
     TextInputType? keyboardType,
     bool obscureText = false,
+    Widget? suffixIcon,
   }) {
     return TextField(
       controller: controller,
@@ -367,6 +428,7 @@ class _LoginScreenState extends State<LoginScreen> {
         labelText: label,
         labelStyle: AppTypography.label(color: palette.textMuted),
         filled: true,
+        suffixIcon: suffixIcon,
         fillColor: palette.surface,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(

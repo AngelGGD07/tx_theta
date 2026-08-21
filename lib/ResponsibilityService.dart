@@ -104,6 +104,39 @@ class ResponsibilityService {
     });
   }
 
+  /// Versión idempotente de markStarted. Si ya existe un inicio registrado,
+  /// NO lo sobrescribe silenciosamente. Necesaria porque Android puede
+  /// reenviar la acción de una notificación (reinicios, reintentos del
+  /// sistema, doble toque por lag) — sin esto, cada reenvío generaría un
+  /// segundo evento y contaminaría exactamente el dato que más importa.
+  /// Usa una transacción para que la comprobación y la escritura sean
+  /// atómicas (una lectura + escritura separadas dejarían una ventana de
+  /// carrera entre el momento de leer y el de escribir).
+  Future<void> markStartedIfNotAlready({
+    required String responsibilityId,
+    required DateTime actualStartAt,
+    required StartSource source,
+  }) async {
+    final docRef = _responsibilities.doc(responsibilityId);
+    await _db.runTransaction((transaction) async {
+      final snap = await transaction.get(docRef);
+      if (!snap.exists) {
+        throw StateError('Responsabilidad no encontrada: $responsibilityId');
+      }
+      final data = snap.data()!;
+      if (data['startedAt'] != null) {
+        // Ya hay un inicio registrado — no lo tocamos. Este es el caso
+        // que evita la duplicación.
+        return;
+      }
+      transaction.update(docRef, {
+        'startedAt': Timestamp.fromDate(actualStartAt),
+        'startSource': source.name,
+        'status': ResponsibilityStatus.started.name,
+      });
+    });
+  }
+
   // ------------------------- EVENTOS -------------------------
 
   /// Registra la respuesta a la notificación de verificación.

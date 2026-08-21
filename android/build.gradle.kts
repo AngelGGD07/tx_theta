@@ -22,3 +22,22 @@ subprojects {
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
+
+subprojects {
+    // 1. Configuramos Java 17 de forma nativa SOLO para los plugins de Android
+    plugins.withId("com.android.library") {
+        configure<com.android.build.gradle.LibraryExtension> {
+            compileOptions {
+                sourceCompatibility = JavaVersion.VERSION_17
+                targetCompatibility = JavaVersion.VERSION_17
+            }
+        }
+    }
+
+    // 2. Configuramos Kotlin 17 para que haga match perfecto
+    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
+    }
+}

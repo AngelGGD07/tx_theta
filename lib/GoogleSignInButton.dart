@@ -14,11 +14,6 @@ class GoogleSignInButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final String label;
   final String assetPath;
-
-  /// Si es true, el botón ocupa todo el ancho disponible (para alinearse
-  /// con los demás botones de la pantalla). La altura sigue siendo 40dp,
-  /// tal como exige la spec — no la agrandes para "igualarla" a los 52dp
-  /// de tus otros botones, eso también rompería el cumplimiento.
   final bool stretch;
 
   const GoogleSignInButton({
@@ -66,22 +61,24 @@ class GoogleSignInButton extends StatelessWidget {
       ],
     );
 
+    // MEJORA FLUTTER: Pasamos el borde y el color directamente al Material
+    // para que el InkWell (efecto de toque) se renderice perfectamente encima.
     return Material(
       color: backgroundColor,
-      borderRadius: BorderRadius.circular(4),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(4),
+        side: BorderSide(color: borderColor, width: 1),
+      ),
       child: InkWell(
         onTap: onPressed,
         borderRadius: BorderRadius.circular(4),
-        child: Container(
+        child: SizedBox(
           height: 40,
           width: stretch ? double.infinity : null,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(color: borderColor, width: 1),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: content,
           ),
-          alignment: Alignment.center,
-          child: content,
         ),
       ),
     );
