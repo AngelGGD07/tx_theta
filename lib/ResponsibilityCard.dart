@@ -1,7 +1,7 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'Responsibility.dart';
 import 'ResponsibilityService.dart';
+import 'main.dart';
 
 class ResponsibilityCard extends StatefulWidget {
   final Responsibility responsibility;
@@ -18,12 +18,8 @@ class ResponsibilityCard extends StatefulWidget {
 }
 
 class _ResponsibilityCardState extends State<ResponsibilityCard> {
-  Timer? _undoTimer;
-  bool _showUndo = false;
-
   @override
   void dispose() {
-    _undoTimer?.cancel();
     super.dispose();
   }
 
@@ -33,76 +29,30 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
       actualStartAt: DateTime.now(),
       source: StartSource.manualLive,
     );
-    setState(() => _showUndo = true);
-    _undoTimer?.cancel();
-    _undoTimer = Timer(const Duration(seconds: 6), () {
-      if (mounted) setState(() => _showUndo = false);
-    });
-  }
 
-  Future<void> _undo() async {
-    _undoTimer?.cancel();
-    await widget.service.undoStart(widget.responsibility.id);
-    if (mounted) setState(() => _showUndo = false);
-  }
+    if (!mounted) return;
 
-  Future<void> _markStartedInThePast() async {
-    final now = DateTime.now();
-    final choice = await showModalBottomSheet<DateTime>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              title: const Text('Hoy, más temprano'),
-              onTap: () => Navigator.pop(
-                  ctx, DateTime(now.year, now.month, now.day, 9)),
-            ),
-            ListTile(
-              title: const Text('Ayer'),
-              onTap: () {
-                final yesterday = now.subtract(const Duration(days: 1));
-                Navigator.pop(ctx, DateTime(yesterday.year, yesterday.month,
-                    yesterday.day, 19));
-              },
-            ),
-            ListTile(
-              title: const Text('Elegir fecha y hora'),
-              onTap: () async {
-                Navigator.pop(ctx);
-                final date = await showDatePicker(
-                  context: context,
-                  initialDate: now,
-                  firstDate: now.subtract(const Duration(days: 60)),
-                  lastDate: now,
-                );
-                if (date == null) return;
-                if (!mounted) return;
-                final time = await showTimePicker(
-                  context: context,
-                  initialTime: TimeOfDay.now(),
-                );
-                if (time == null) return;
-                await widget.service.markStarted(
-                  responsibilityId: widget.responsibility.id,
-                  actualStartAt: DateTime(date.year, date.month, date.day,
-                      time.hour, time.minute),
-                  source: StartSource.manualRecalled,
-                );
-              },
-            ),
-          ],
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Inicio registrado'),
+        duration: const Duration(seconds: 6),
+        action: SnackBarAction(
+          label: 'DESHACER',
+          onPressed: () async {
+            await widget.service.undoStart(widget.responsibility.id);
+          },
         ),
       ),
     );
-    if (choice != null) {
-      await widget.service.markStarted(
-        responsibilityId: widget.responsibility.id,
-        actualStartAt: choice,
-        source: StartSource.manualRecalled,
-      );
-    }
+  }
+
+  Future<void> _markStartedInThePast() async {
+    await showPastStartSelector(
+      context,
+      widget.responsibility.id,
+      widget.service,
+      StartSource.manualRecalled,
+    );
   }
 
   @override
@@ -134,7 +84,6 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
               style: TextStyle(color: Colors.grey.shade600),
             ),
             const SizedBox(height: 12),
-
             if (hasStarted) ...[
               _buildConfrontation(r),
             ] else ...[
@@ -154,23 +103,12 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
                 ],
               ),
             ],
-
-            if (_showUndo)
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: _undo,
-                  child: const Text('Deshacer'),
-                ),
-              ),
           ],
         ),
       ),
     );
   }
 
-  /// Confrontación individual: un hecho, no un patrón. Sin promedios,
-  /// sin "detectamos" — eso queda prohibido hasta juntar más muestras.
   Widget _buildConfrontation(Responsibility r) {
     if (r.predictedStartAt == null || r.startedAt == null) {
       return Text(
@@ -184,17 +122,29 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
 
     String message;
     if (absHours < 1) {
-      message = 'Empezaste prácticamente cuando lo habías previsto.';
+      message = r.isHighQualityStart
+          ? 'Empezaste prácticamente cuando lo habías previsto.'
+          : 'Según la fecha que recordaste, empezaste aproximadamente cuando lo habías previsto.';
     } else if (absHours < 24) {
       final h = absHours.round();
-      message = late
-          ? 'Comenzaste $h ${h == 1 ? 'hora' : 'horas'} después de lo previsto.'
-          : 'Comenzaste $h ${h == 1 ? 'hora' : 'horas'} antes de lo previsto.';
+      final unit = h == 1 ? 'hora' : 'horas';
+      message = r.isHighQualityStart
+          ? (late
+          ? 'Comenzaste $h $unit después de lo previsto.'
+          : 'Comenzaste $h $unit antes de lo previsto.')
+          : (late
+          ? 'Según la fecha que recordaste, comenzaste aproximadamente $h $unit después de lo previsto.'
+          : 'Según la fecha que recordaste, comenzaste aproximadamente $h $unit antes de lo previsto.');
     } else {
       final d = (absHours / 24).round();
-      message = late
-          ? 'Comenzaste $d ${d == 1 ? 'día' : 'días'} después de lo previsto.'
-          : 'Comenzaste $d ${d == 1 ? 'día' : 'días'} antes de lo previsto.';
+      final unit = d == 1 ? 'día' : 'días';
+      message = r.isHighQualityStart
+          ? (late
+          ? 'Comenzaste $d $unit después de lo previsto.'
+          : 'Comenzaste $d $unit antes de lo previsto.')
+          : (late
+          ? 'Según la fecha que recordaste, comenzaste aproximadamente $d $unit después de lo previsto.'
+          : 'Según la fecha que recordaste, comenzaste aproximadamente $d $unit antes de lo previsto.');
     }
 
     return Container(
@@ -236,5 +186,93 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
     if (diff == -1) return 'ayer a las $time';
     if (diff > 1) return 'en $diff días';
     return 'hace ${-diff} días';
+  }
+}
+
+// === FUNCIÓN GLOBAL PARA REUTILIZAR EL MODAL ===
+Future<void> showPastStartSelector(
+    BuildContext context,
+    String responsibilityId,
+    ResponsibilityService service,
+    StartSource source,
+    ) async {
+
+  final now = DateTime.now();
+
+  // 1. Esperamos la decisión del modal.
+  final choice = await showModalBottomSheet<dynamic>(
+    context: context,
+    builder: (ctx) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            title: const Text('Hoy, más temprano'),
+            onTap: () => Navigator.pop(ctx, DateTime(now.year, now.month, now.day, 9)),
+          ),
+          ListTile(
+            title: const Text('Ayer'),
+            onTap: () {
+              final yesterday = now.subtract(const Duration(days: 1));
+              Navigator.pop(ctx, DateTime(yesterday.year, yesterday.month, yesterday.day, 19));
+            },
+          ),
+          ListTile(
+            title: const Text('Elegir fecha y hora'),
+            onTap: () => Navigator.pop(ctx, 'custom'), // Retornamos un flag
+          ),
+        ],
+      ),
+    ),
+  );
+
+  // Si el usuario cerró el modal tocando afuera, cancelamos.
+  if (choice == null) return;
+
+  DateTime? finalDate;
+
+  // 2. Procesamos la decisión de forma lineal.
+  if (choice is DateTime) {
+    finalDate = choice;
+  } else if (choice == 'custom') {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: now.subtract(const Duration(days: 60)),
+      lastDate: now,
+    );
+    if (date == null || !context.mounted) return;
+
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+    );
+    if (time == null) return;
+
+    finalDate = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+  }
+
+  // 3. Guardamos en base de datos y usamos la LLAVE GLOBAL blindada
+  if (finalDate != null) {
+    await service.markStarted(
+      responsibilityId: responsibilityId,
+      actualStartAt: finalDate,
+      source: source,
+    );
+
+    // Obliga a que se dibuje el SnackBar después de que el modal haya desaparecido por completo
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      rootScaffoldMessengerKey.currentState?.hideCurrentSnackBar();
+      rootScaffoldMessengerKey.currentState?.showSnackBar(
+        SnackBar(
+          content: const Text('Inicio registrado'),
+          duration: const Duration(seconds: 6),
+          action: SnackBarAction(
+            label: 'DESHACER',
+            onPressed: () => service.undoStart(responsibilityId),
+          ),
+        ),
+      );
+    });
   }
 }

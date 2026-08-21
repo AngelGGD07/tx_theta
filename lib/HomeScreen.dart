@@ -1,9 +1,12 @@
-import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:phi/CaptureResponsibilityScreen.dart';
+
 import 'Responsibility.dart';
-import 'ResponsibilityService.dart';
-import 'CaptureResponsibilityScreen.dart';
 import 'ResponsibilityCard.dart';
+import 'ResponsibilityService.dart';
+import 'VerificationNotificationService.dart';
+import 'main.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -15,41 +18,134 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _service = ResponsibilityService();
 
-  Future<void> _logout() async {
-    try {
-      await FirebaseAuth.instance.signOut();
+  bool _isProcessingNotificationAction = false;
 
-      // No uses Navigator aquí.
-      // AuthGate debe detectar el cierre de sesión y mostrar LoginScreen.
-    } on FirebaseAuthException catch (error, stackTrace) {
-      debugPrint(
-        'Error de Firebase Auth al cerrar sesión: ${error.code}',
-      );
-      debugPrintStack(stackTrace: stackTrace);
+  @override
+  void initState() {
+    super.initState();
 
-      if (!mounted) return;
+    pendingNotificationAction.addListener(_handlePendingAction);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'No se pudo cerrar la sesión. Inténtalo de nuevo.',
-          ),
-        ),
-      );
-    } catch (error, stackTrace) {
-      debugPrint('Error inesperado al cerrar sesión: $error');
-      debugPrintStack(stackTrace: stackTrace);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _handlePendingAction();
+    });
+  }
 
-      if (!mounted) return;
+  @override
+  void dispose() {
+    pendingNotificationAction.removeListener(_handlePendingAction);
+    super.dispose();
+  }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'No se pudo cerrar la sesión. Inténtalo de nuevo.',
-          ),
-        ),
-      );
+  void _handlePendingAction() {
+    if (_isProcessingNotificationAction) {
+      return;
     }
+
+    final action = pendingNotificationAction.value;
+
+    if (action == null) {
+      return;
+    }
+
+    if (action.actionId != VerificationAction.alreadyStarted &&
+        action.actionId != VerificationAction.notYet) {
+      return;
+    }
+
+    _isProcessingNotificationAction = true;
+
+    // Se consume inmediatamente para impedir que el ValueNotifier,
+    // una reconstrucción o un reinicio del listener repitan la acción.
+    pendingNotificationAction.value = null;
+
+    _processPendingAction(action);
+  }
+
+  Future<void> _processPendingAction(
+      PendingNotificationAction action,
+      ) async {
+    try {
+      if (action.actionId == VerificationAction.alreadyStarted) {
+        await _processAlreadyStarted(action);
+        return;
+      }
+
+      if (action.actionId == VerificationAction.notYet) {
+        await _processNotYet(action);
+      }
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No pudimos registrar la respuesta. Inténtalo nuevamente.',
+            ),
+          ),
+        );
+
+      debugPrint(
+        'Error procesando acción de notificación '
+            '${action.actionId}: $error',
+      );
+    } finally {
+      _isProcessingNotificationAction = false;
+    }
+  }
+
+  Future<void> _processAlreadyStarted(
+      PendingNotificationAction action,
+      ) async {
+    await _service.logNotificationEvent(
+      responsibilityId: action.responsibilityId,
+      type: 'notification_action_selected',
+      actionSelected: action.actionId,
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    await showPastStartSelector(
+      context,
+      action.responsibilityId,
+      _service,
+      StartSource.reminderRecalled,
+    );
+  }
+
+  Future<void> _processNotYet(
+      PendingNotificationAction action,
+      ) async {
+    await _service.recordNotYetResponse(
+      responsibilityId: action.responsibilityId,
+    );
+
+    await _service.logNotificationEvent(
+      responsibilityId: action.responsibilityId,
+      type: 'notification_action_selected',
+      actionSelected: action.actionId,
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Todavía no has comenzado. Conservamos tu predicción.',
+          ),
+          duration: Duration(seconds: 6),
+        ),
+      );
   }
 
   @override
@@ -60,8 +156,7 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
-            tooltip: 'Cerrar sesión',
-            onPressed: _logout,
+            onPressed: () => FirebaseAuth.instance.signOut(),
           ),
         ],
       ),
@@ -69,29 +164,43 @@ class _HomeScreenState extends State<HomeScreen> {
         stream: _service.watchActiveResponsibilities(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
           }
+
           if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
+            return Center(
+              child: Text('Error: ${snapshot.error}'),
+            );
           }
+
           final items = snapshot.data ?? [];
+
           if (items.isEmpty) {
             return const _EmptyState();
           }
+
           return ListView.builder(
             padding: const EdgeInsets.symmetric(vertical: 12),
             itemCount: items.length,
-            itemBuilder: (context, index) => ResponsibilityCard(
-              responsibility: items[index],
-              service: _service,
-            ),
+            itemBuilder: (context, index) {
+              final responsibility = items[index];
+
+              return ResponsibilityCard(
+                key: ValueKey(responsibility.id),
+                responsibility: responsibility,
+                service: _service,
+              );
+            },
           );
         },
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => Navigator.of(context).push(
           MaterialPageRoute(
-              builder: (_) => const CaptureResponsibilityScreen()),
+            builder: (context) => const CaptureResponsibilityScreen(),
+          ),
         ),
         icon: const Icon(Icons.add),
         label: const Text('Nueva'),
@@ -111,7 +220,11 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.inbox_outlined, size: 48, color: Colors.grey.shade400),
+            Icon(
+              Icons.inbox_outlined,
+              size: 48,
+              color: Colors.grey.shade400,
+            ),
             const SizedBox(height: 16),
             const Text(
               'No tienes responsabilidades registradas todavía.',

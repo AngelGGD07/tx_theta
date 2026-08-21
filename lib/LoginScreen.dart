@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:phi/AppColors.dart';
 import 'package:phi/GoogleSignInButton.dart';
+import 'package:phi/HomeScreen.dart';
 
 /// -----------------------------------------------------------------------
 /// Idiomas soportados. Se puede ampliar fácilmente agregando más entradas.
@@ -79,6 +80,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
 
+  final FocusNode _passwordFocusNode = FocusNode();
+
   bool _isLogin = true;
   bool _isLoading = false;
   bool _obscurePassword = true;
@@ -128,9 +131,8 @@ class _LoginScreenState extends State<LoginScreen> {
           password: _passwordController.text.trim(),
         )
             .timeout(const Duration(seconds: 15));
-
-        if (!mounted) return;
         _showMessage(_t('welcome_back'));
+        _goHome();
       } else {
         await _auth
             .createUserWithEmailAndPassword(
@@ -138,9 +140,8 @@ class _LoginScreenState extends State<LoginScreen> {
           password: _passwordController.text.trim(),
         )
             .timeout(const Duration(seconds: 15));
-
-        if (!mounted) return;
         _showMessage(_t('account_created'));
+        _goHome();
       }
     } catch (e) {
       _showMessage(_friendlyAuthError(e));
@@ -166,14 +167,20 @@ class _LoginScreenState extends State<LoginScreen> {
       await _auth
           .signInWithCredential(credential)
           .timeout(const Duration(seconds: 15));
-
-      if (!mounted) return;
       _showMessage(_t('welcome_back'));
+      _goHome();
     } catch (e) {
       _showMessage(_friendlyAuthError(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _goHome() {
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const HomeScreen()),
+    );
   }
 
   void _showMessage(String message) {
@@ -197,6 +204,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _passwordFocusNode.dispose();
     super.dispose();
   }
 
@@ -343,6 +351,8 @@ class _LoginScreenState extends State<LoginScreen> {
               controller: _emailController,
               label: _t('email'),
               keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.next,
+              onSubmitted: (_) => _passwordFocusNode.requestFocus(),
             ),
             const SizedBox(height: 14),
             _buildTextField(
@@ -350,19 +360,28 @@ class _LoginScreenState extends State<LoginScreen> {
               controller: _passwordController,
               label: _t('password'),
               obscureText: _obscurePassword,
+              focusNode: _passwordFocusNode,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _authenticate(),
               suffixIcon: IconButton(
                 onPressed: () =>
                     setState(() => _obscurePassword = !_obscurePassword),
-                icon: Image.asset(
-                  _obscurePassword
-                      ? 'assets/eye_closed.png'
-                      : 'assets/eye_open.png',
-                  width: 22,
-                  height: 22,
-                  errorBuilder: (context, error, stackTrace) => Icon(
-                    _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                    color: palette.textMuted,
-                    size: 22,
+                icon: ColorFiltered(
+                  colorFilter: ColorFilter.mode(
+                    palette.textMuted,
+                    BlendMode.srcIn,
+                  ),
+                  child: Image.asset(
+                    _obscurePassword
+                        ? 'assets/eye_closed.png'
+                        : 'assets/eye_open.png',
+                    width: 22,
+                    height: 22,
+                    errorBuilder: (context, error, stackTrace) => Icon(
+                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                      color: palette.textMuted,
+                      size: 22,
+                    ),
                   ),
                 ),
               ),
@@ -418,11 +437,17 @@ class _LoginScreenState extends State<LoginScreen> {
     TextInputType? keyboardType,
     bool obscureText = false,
     Widget? suffixIcon,
+    FocusNode? focusNode,
+    TextInputAction? textInputAction,
+    ValueChanged<String>? onSubmitted,
   }) {
     return TextField(
       controller: controller,
+      focusNode: focusNode,
       keyboardType: keyboardType,
       obscureText: obscureText,
+      textInputAction: textInputAction,
+      onSubmitted: onSubmitted,
       style: AppTypography.body(color: palette.textPrimary),
       decoration: InputDecoration(
         labelText: label,

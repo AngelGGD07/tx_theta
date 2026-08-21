@@ -11,10 +11,9 @@ import 'ResponsibilityService.dart';
 import 'VerificationNotificationService.dart';
 import 'Responsibility.dart' show StartSource;
 
-/// Contexto normalizado de una acción de notificación que necesita
-/// interacción del usuario (elegir fecha, ver la responsabilidad) y por
-/// tanto no puede resolverse aquí. HomeScreen la lee al montar y la limpia.
-/// main.dart NO decide cómo se presenta — solo la transporta.
+// 1. LA LLAVE MÁGICA: Controla los mensajes en pantalla (SnackBar) desde CUALQUIER archivo
+final rootScaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
+
 class PendingNotificationAction {
   final String actionId;
   final String responsibilityId;
@@ -25,7 +24,7 @@ class PendingNotificationAction {
   });
 }
 
-PendingNotificationAction? pendingNotificationAction;
+final pendingNotificationAction = ValueNotifier<PendingNotificationAction?>(null);
 
 final _notificationService = VerificationNotificationService();
 final _responsibilityService = ResponsibilityService();
@@ -44,20 +43,12 @@ Future<void> main() async {
   runApp(const MyApp());
 }
 
-/// Manejador de acciones de notificación. Normaliza la entrada, registra
-/// que la acción llegó, y delega la escritura de dominio al servicio.
-/// No contiene diálogos ni decide presentación — eso es de la UI.
 Future<void> _handleNotificationAction(
     String responsibilityId,
     String actionId,
     ) async {
-  if (responsibilityId.isEmpty) {
-    debugPrint('Acción de notificación sin responsibilityId: $actionId');
-    return;
-  }
+  if (responsibilityId.isEmpty) return;
 
-  // Se registra primero, siempre — así distinguimos "no llegó" de
-  // "llegó pero no se procesó", tal como exige el plan de validación.
   await _responsibilityService.logNotificationEvent(
     responsibilityId: responsibilityId,
     type: 'notification_action_received',
@@ -66,30 +57,43 @@ Future<void> _handleNotificationAction(
 
   switch (actionId) {
     case VerificationAction.starting:
-    // Ruta de mayor calidad de señal. Idempotente: si ya existe un
-    // inicio registrado, no lo sobrescribe (ver ResponsibilityService).
+    // CASO A: Acción directa ("Estoy empezando"). Se salta el menú.
       await _responsibilityService.markStartedIfNotAlready(
         responsibilityId: responsibilityId,
         actualStartAt: DateTime.now(),
         source: StartSource.reminderLive,
       );
+      // ¡AQUÍ ESTABA EL ERROR! Faltaba disparar el cartel de Deshacer.
+      _showGlobalUndo(responsibilityId);
       break;
 
     case VerificationAction.alreadyStarted:
     case VerificationAction.notYet:
-    // Estas necesitan interacción del usuario (selector de fecha, o
-    // simplemente abrir la responsabilidad). Se resuelven en HomeScreen,
-    // no aquí. Deliberadamente NO implementadas todavía — el plan de
-    // validación dice: primero cierra notification_live end-to-end.
-      pendingNotificationAction = PendingNotificationAction(
+    // CASO B: Requiere menú ("Ya había empezado"). Pasa a HomeScreen.
+      pendingNotificationAction.value = PendingNotificationAction(
         actionId: actionId,
         responsibilityId: responsibilityId,
       );
       break;
-
-    default:
-      debugPrint('Acción de notificación desconocida: $actionId');
   }
+}
+
+// 2. LA FUNCIÓN QUE LANZA EL DESHACER BLINDADO
+// El "addPostFrameCallback" asegura que salga incluso si la app viene de estar minimizada
+void _showGlobalUndo(String responsibilityId) {
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    rootScaffoldMessengerKey.currentState?.hideCurrentSnackBar();
+    rootScaffoldMessengerKey.currentState?.showSnackBar(
+      SnackBar(
+        content: const Text('Inicio registrado'),
+        duration: const Duration(seconds: 6),
+        action: SnackBarAction(
+          label: 'DESHACER',
+          onPressed: () => _responsibilityService.undoStart(responsibilityId),
+        ),
+      ),
+    );
+  });
 }
 
 class MyApp extends StatelessWidget {
@@ -98,6 +102,8 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      // 3. CONECTAMOS LA LLAVE A LA RAÍZ DE LA APP
+      scaffoldMessengerKey: rootScaffoldMessengerKey,
       title: 'BiPi',
       theme: buildLightTheme(),
       darkTheme: buildDarkTheme(),
@@ -107,8 +113,6 @@ class MyApp extends StatelessWidget {
   }
 }
 
-/// Decide Login vs Home según la sesión de Firebase Auth.
-/// Solo enrutamiento — cero lógica de dominio.
 class _AuthGate extends StatelessWidget {
   const _AuthGate();
 
