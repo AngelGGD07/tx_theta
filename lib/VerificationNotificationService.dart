@@ -4,13 +4,14 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:flutter_timezone/flutter_timezone.dart';
+import 'AnalyticsService.dart';
 
 /// IDs de las acciones que aparecen en la notificación de verificación.
 /// Se usan tanto en la UI de la notificación como al procesar la respuesta.
 class VerificationAction {
-  static const starting = 'start_now'; // "Estoy empezando" — antes: 'starting'
-  static const alreadyStarted = 'already_started'; // "Ya había empezado"
-  static const notYet = 'not_yet'; // "Todavía no"
+  static const starting = 'start_now';
+  static const alreadyStarted = 'already_started';
+  static const notYet = 'not_yet';
 }
 
 /// Callback que la app registra para reaccionar cuando el usuario toca
@@ -32,15 +33,13 @@ class VerificationNotificationService {
 
   final FlutterLocalNotificationsPlugin _plugin =
   FlutterLocalNotificationsPlugin();
+  final AnalyticsService _analytics = AnalyticsService();
 
   OnVerificationAction? onAction;
 
   Future<void> init({required OnVerificationAction onAction}) async {
     this.onAction = onAction;
     tz_data.initializeTimeZones();
-    // Corrección: antes esto siempre fijaba UTC sin importar el país del
-    // dispositivo, porque leía tz.local antes de configurarlo. Ahora se
-    // obtiene la zona horaria real del sistema operativo.
     final String deviceTimeZone = await FlutterTimezone.getLocalTimezone();
     tz.setLocalLocation(tz.getLocation(deviceTimeZone));
     debugPrint('Zona horaria configurada: $deviceTimeZone');
@@ -56,11 +55,6 @@ class VerificationNotificationService {
       onDidReceiveBackgroundNotificationResponse: _backgroundHandler,
     );
 
-    // CRÍTICO: en arranque en frío (app completamente cerrada), el
-    // callback de arriba puede no dispararse porque se registra después
-    // de que la notificación ya lanzó la app. Hay que preguntar
-    // explícitamente "¿qué me lanzó?" en vez de depender solo del
-    // callback reactivo.
     final launchDetails = await _plugin.getNotificationAppLaunchDetails();
     if (launchDetails != null &&
         launchDetails.didNotificationLaunchApp &&
@@ -73,20 +67,18 @@ class VerificationNotificationService {
   }
 
   /// Pide POST_NOTIFICATIONS (Android 13+) y la alarma exacta (Android 12+).
-  /// Sin esto, la notificación puede no dispararse en el momento exacto,
-  /// y eso contaminaría la métrica de "tasa de respuesta" del sprint.
+  /// Analytics temporalmente eliminado para no contaminar métricas en cada init().
   Future<void> _requestPermissions() async {
     if (!Platform.isAndroid) return;
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     if (androidPlugin == null) return;
 
-    // En Android <13 y <12 respectivamente, estos métodos no muestran
-    // ningún diálogo porque el permiso no es necesario en esas versiones
-    // — eso es normal, no un fallo. El log te dice cuál fue el caso real.
+    // 1. Permiso de notificaciones
     final notifGranted = await androidPlugin.requestNotificationsPermission();
     debugPrint('Permiso de notificaciones concedido: $notifGranted');
 
+    // 2. Permiso de alarma exacta
     final alarmGranted = await androidPlugin.requestExactAlarmsPermission();
     debugPrint('Permiso de alarma exacta concedido: $alarmGranted');
   }
@@ -95,7 +87,7 @@ class VerificationNotificationService {
   /// declarado como predictedStartAt.
   Future<void> scheduleVerification({
     required String responsibilityId,
-    required String subjectLabel, // ej. "Laboratorio de Física"
+    required String subjectLabel,
     required DateTime predictedStartAt,
   }) async {
     // No programar si la fecha ya pasó.
@@ -131,7 +123,8 @@ class VerificationNotificationService {
     final now = tz.TZDateTime.now(tz.local);
     debugPrint('Hora actual (tz): $now');
     debugPrint('Hora programada (tz): $scheduledTime');
-    debugPrint('Diferencia: ${scheduledTime.difference(now).inSeconds} segundos');
+    debugPrint(
+        'Diferencia: ${scheduledTime.difference(now).inSeconds} segundos');
 
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
@@ -139,7 +132,7 @@ class VerificationNotificationService {
     debugPrint('¿Puede programar alarmas exactas?: $canExact');
 
     await _plugin.zonedSchedule(
-      responsibilityId.hashCode, // ID único por responsabilidad.
+      responsibilityId.hashCode,
       'Dijiste que empezarías ahora',
       '¿Qué ocurrió con "$subjectLabel"?',
       scheduledTime,
@@ -150,25 +143,50 @@ class VerificationNotificationService {
       payload: responsibilityId,
     );
 
-    // Diagnóstico: confirma si Android de verdad registró la notificación,
-    // para distinguir "nunca se programó" de "se programó pero el sistema
-    // la mató antes de mostrarla".
+    await _analytics.logEvent(
+      AnalyticsEvents.notificationScheduled,
+      parameters: {
+        AnalyticsParams.responsibilityId: responsibilityId,
+      },
+    );
+
     final pending = await _plugin.pendingNotificationRequests();
     debugPrint('Notificaciones pendientes: ${pending.length}');
-    for (final p in pending) {
-      debugPrint('  → id=${p.id} title="${p.title}"');
-    }
   }
 
   Future<void> cancelVerification(String responsibilityId) async {
     await _plugin.cancel(responsibilityId.hashCode);
+    await _analytics.logEvent(
+      AnalyticsEvents.notificationCancelled,
+      parameters: {
+        AnalyticsParams.responsibilityId: responsibilityId,
+      },
+    );
   }
 
   void _handleResponse(NotificationResponse response) {
     final id = response.payload;
     final action = response.actionId;
-    if (id == null || action == null) return;
-    onAction?.call(id, action);
+    if (id == null) return;
+
+    // Si actionId viene vacío o nulo, significa que el usuario tocó el cuerpo
+    // de la notificación. De lo contrario, tocó una acción específica.
+    // Son mutuamente excluyentes desde el punto de vista analítico.
+    if (action == null || action.isEmpty) {
+      _analytics.logEvent(
+        AnalyticsEvents.notificationOpened,
+        parameters: {AnalyticsParams.responsibilityId: id},
+      );
+    } else {
+      _analytics.logEvent(
+        AnalyticsEvents.notificationActionSelected,
+        parameters: {
+          AnalyticsParams.responsibilityId: id,
+          AnalyticsParams.actionId: action,
+        },
+      );
+      onAction?.call(id, action);
+    }
   }
 }
 
@@ -181,6 +199,5 @@ void _backgroundHandler(NotificationResponse response) {
   // inicializado. Para el MVP, lo más simple y confiable es reabrir la
   // app con showsUserInterface: true (ya configurado arriba en cada
   // acción) y dejar que _handleResponse procese la acción una vez que
-  // la app esté en primer plano, en lugar de intentar escribir a
-  // Firestore directamente desde este isolate.
+  // la app esté en primer plano.
 }

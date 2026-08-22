@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import 'AnalyticsService.dart';
 import 'Responsibility.dart';
 import 'ResponsibilityService.dart';
 import 'main.dart';
+
+// Set global en memoria para deduplicar la exposición de la confrontación
+// durante el ciclo de vida de la aplicación.
+final Set<String> _loggedConfrontations = {};
 
 class ResponsibilityCard extends StatefulWidget {
   final Responsibility responsibility;
@@ -18,6 +23,8 @@ class ResponsibilityCard extends StatefulWidget {
 }
 
 class _ResponsibilityCardState extends State<ResponsibilityCard> {
+  final _analytics = AnalyticsService();
+
   @override
   void dispose() {
     super.dispose();
@@ -36,6 +43,7 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
       SnackBar(
         content: const Text('Inicio registrado'),
         duration: const Duration(seconds: 6),
+        persist: false,
         action: SnackBarAction(
           label: 'DESHACER',
           onPressed: () async {
@@ -59,6 +67,28 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
   Widget build(BuildContext context) {
     final r = widget.responsibility;
     final hasStarted = r.startedAt != null;
+
+    if (hasStarted) {
+      final confrontationKey = '${r.id}_${r.startedAt!.millisecondsSinceEpoch}';
+
+      if (!_loggedConfrontations.contains(confrontationKey)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _loggedConfrontations.contains(confrontationKey)) {
+            return;
+          }
+
+          _loggedConfrontations.add(confrontationKey);
+
+          _analytics.logEvent(
+            AnalyticsEvents.confrontationShown,
+            parameters: {
+              AnalyticsParams.responsibilityId: r.id,
+              AnalyticsParams.startSource: r.startSource?.name,
+            },
+          );
+        });
+      }
+    }
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -196,7 +226,6 @@ Future<void> showPastStartSelector(
     ResponsibilityService service,
     StartSource source,
     ) async {
-
   final now = DateTime.now();
 
   // 1. Esperamos la decisión del modal.
@@ -208,13 +237,15 @@ Future<void> showPastStartSelector(
         children: [
           ListTile(
             title: const Text('Hoy, más temprano'),
-            onTap: () => Navigator.pop(ctx, DateTime(now.year, now.month, now.day, 9)),
+            onTap: () => Navigator.pop(
+                ctx, DateTime(now.year, now.month, now.day, 9)),
           ),
           ListTile(
             title: const Text('Ayer'),
             onTap: () {
               final yesterday = now.subtract(const Duration(days: 1));
-              Navigator.pop(ctx, DateTime(yesterday.year, yesterday.month, yesterday.day, 19));
+              Navigator.pop(ctx,
+                  DateTime(yesterday.year, yesterday.month, yesterday.day, 19));
             },
           ),
           ListTile(
@@ -226,7 +257,6 @@ Future<void> showPastStartSelector(
     ),
   );
 
-  // Si el usuario cerró el modal tocando afuera, cancelamos.
   if (choice == null) return;
 
   DateTime? finalDate;
@@ -249,7 +279,8 @@ Future<void> showPastStartSelector(
     );
     if (time == null) return;
 
-    finalDate = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    finalDate =
+        DateTime(date.year, date.month, date.day, time.hour, time.minute);
 
     // --- BLOQUEO B4: IMPEDIR HORAS FUTURAS ---
     if (finalDate.isAfter(DateTime.now())) {
@@ -260,9 +291,8 @@ Future<void> showPastStartSelector(
             content: Text('No puedes registrar un inicio en el futuro.'),
           ),
         );
-      return; // Detenemos la función, no se guarda nada en Firestore.
+      return;
     }
-    // -----------------------------------------
   }
 
   // 3. Guardamos en base de datos y usamos la LLAVE GLOBAL blindada
@@ -273,13 +303,13 @@ Future<void> showPastStartSelector(
       source: source,
     );
 
-    // Obliga a que se dibuje el SnackBar después de que el modal haya desaparecido por completo
     WidgetsBinding.instance.addPostFrameCallback((_) {
       rootScaffoldMessengerKey.currentState?.hideCurrentSnackBar();
       rootScaffoldMessengerKey.currentState?.showSnackBar(
         SnackBar(
           content: const Text('Inicio registrado'),
           duration: const Duration(seconds: 6),
+          persist: false,
           action: SnackBarAction(
             label: 'DESHACER',
             onPressed: () => service.undoStart(responsibilityId),

@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 
 import 'firebase_options.dart';
+import 'AnalyticsService.dart';
 import 'AppColors.dart';
 import 'LoginScreen.dart';
 import 'HomeScreen.dart';
@@ -28,6 +29,7 @@ final pendingNotificationAction = ValueNotifier<PendingNotificationAction?>(null
 
 final _notificationService = VerificationNotificationService();
 final _responsibilityService = ResponsibilityService();
+final _analytics = AnalyticsService();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -55,6 +57,14 @@ Future<void> _handleNotificationAction(
     actionSelected: actionId,
   );
 
+  await _analytics.logEvent(
+    AnalyticsEvents.notificationActionReceived,
+    parameters: {
+      AnalyticsParams.responsibilityId: responsibilityId,
+      AnalyticsParams.actionId: actionId,
+    },
+  );
+
   switch (actionId) {
     case VerificationAction.starting:
     // CASO A: Acción directa ("Estoy empezando"). Se salta el menú.
@@ -63,7 +73,6 @@ Future<void> _handleNotificationAction(
         actualStartAt: DateTime.now(),
         source: StartSource.reminderLive,
       );
-      // ¡AQUÍ ESTABA EL ERROR! Faltaba disparar el cartel de Deshacer.
       _showGlobalUndo(responsibilityId);
       break;
 
@@ -79,7 +88,6 @@ Future<void> _handleNotificationAction(
 }
 
 // 2. LA FUNCIÓN QUE LANZA EL DESHACER BLINDADO
-// El "addPostFrameCallback" asegura que salga incluso si la app viene de estar minimizada
 void _showGlobalUndo(String responsibilityId) {
   WidgetsBinding.instance.addPostFrameCallback((_) {
     rootScaffoldMessengerKey.currentState?.hideCurrentSnackBar();
@@ -87,6 +95,7 @@ void _showGlobalUndo(String responsibilityId) {
       SnackBar(
         content: const Text('Inicio registrado'),
         duration: const Duration(seconds: 6),
+        persist: false,
         action: SnackBarAction(
           label: 'DESHACER',
           onPressed: () => _responsibilityService.undoStart(responsibilityId),
@@ -127,8 +136,10 @@ class _AuthGate extends StatelessWidget {
           );
         }
         if (snapshot.hasData) {
+          _analytics.setUser(snapshot.data!.uid);
           return const HomeScreen();
         }
+        _analytics.setUser(null);
         return const LoginScreen();
       },
     );

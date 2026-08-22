@@ -1,7 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'AnalyticsService.dart';
 import 'Responsibility.dart';
+import 'VerificationNotificationService.dart' show VerificationAction;
 
 /// Toda la lectura/escritura de responsabilidades y sus eventos.
 ///
@@ -9,6 +11,7 @@ import 'Responsibility.dart';
 /// nunca se editan ni se borran para conservar el historial conductual.
 class ResponsibilityService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final AnalyticsService _analytics = AnalyticsService();
 
   String get _uid {
     final user = FirebaseAuth.instance.currentUser;
@@ -112,6 +115,8 @@ class ResponsibilityService {
       'startSource': source.name,
       'status': ResponsibilityStatus.started.name,
     });
+
+    await _logStartRegistered(responsibilityId, source);
   }
 
   /// Deshace un inicio registrado accidentalmente.
@@ -121,6 +126,13 @@ class ResponsibilityService {
       'startSource': null,
       'status': ResponsibilityStatus.pending.name,
     });
+
+    await _analytics.logEvent(
+      AnalyticsEvents.startUndone,
+      parameters: {
+        AnalyticsParams.responsibilityId: responsibilityId,
+      },
+    );
   }
 
   /// Registra el inicio solamente si la responsabilidad todavía no tiene uno.
@@ -133,6 +145,7 @@ class ResponsibilityService {
     required StartSource source,
   }) async {
     final docRef = _responsibilities.doc(responsibilityId);
+    var didWrite = false;
 
     await _db.runTransaction((transaction) async {
       final snap = await transaction.get(docRef);
@@ -146,6 +159,7 @@ class ResponsibilityService {
       final data = snap.data()!;
 
       if (data['startedAt'] != null) {
+        didWrite = false;
         return;
       }
 
@@ -154,7 +168,49 @@ class ResponsibilityService {
         'startSource': source.name,
         'status': ResponsibilityStatus.started.name,
       });
+      didWrite = true;
     });
+
+    // Solo se dispara analytics si esta llamada fue la que realmente
+    // escribió. Si la transacción se reintenta por contención, el valor
+    // final de didWrite refleja únicamente el resultado del último
+    // intento — no se duplica el evento por reintentos internos.
+    if (!didWrite) return;
+
+    await _logStartRegistered(responsibilityId, source);
+  }
+
+  /// Registra start_registered siempre, y notification_response_persisted
+  /// adicionalmente cuando el origen del inicio fue una notificación
+  /// (reminderLive o reminderRecalled) — nunca para orígenes manuales.
+  Future<void> _logStartRegistered(
+      String responsibilityId,
+      StartSource source,
+      ) async {
+    await _analytics.logEvent(
+      AnalyticsEvents.startRegistered,
+      parameters: {
+        AnalyticsParams.responsibilityId: responsibilityId,
+        AnalyticsParams.startSource: source.name,
+      },
+    );
+
+    final notificationActionId = switch (source) {
+      StartSource.reminderLive => VerificationAction.starting,
+      StartSource.reminderRecalled => VerificationAction.alreadyStarted,
+      StartSource.manualLive || StartSource.manualRecalled => null,
+    };
+
+    if (notificationActionId == null) return;
+
+    await _analytics.logEvent(
+      AnalyticsEvents.notificationResponsePersisted,
+      parameters: {
+        AnalyticsParams.responsibilityId: responsibilityId,
+        AnalyticsParams.actionId: notificationActionId,
+        AnalyticsParams.startSource: source.name,
+      },
+    );
   }
 
   // ------------------------- EVENTOS DE PREDICCIÓN -------------------------
@@ -206,6 +262,7 @@ class ResponsibilityService {
     final eventRef = _predictionEvents.doc(
       'not_yet_$responsibilityId',
     );
+    var didWrite = false;
 
     await _db.runTransaction((transaction) async {
       final responsibilitySnapshot =
@@ -228,6 +285,7 @@ class ResponsibilityService {
       final existingEvent = await transaction.get(eventRef);
 
       if (existingEvent.exists) {
+        didWrite = false;
         return;
       }
 
@@ -256,7 +314,21 @@ class ResponsibilityService {
         'response': 'not_started',
         'respondedAt': FieldValue.serverTimestamp(),
       });
+      didWrite = true;
     });
+
+    // El guard de idempotencia (existingEvent.exists) es justo lo que evita
+    // que un reintento o una entrega repetida de la notificación dupliquen
+    // este evento en Analytics.
+    if (!didWrite) return;
+
+    await _analytics.logEvent(
+      AnalyticsEvents.notificationResponsePersisted,
+      parameters: {
+        AnalyticsParams.responsibilityId: responsibilityId,
+        AnalyticsParams.actionId: VerificationAction.notYet,
+      },
+    );
   }
 
   // ------------------------- EVENTOS DE NOTIFICACIÓN -------------------------

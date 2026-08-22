@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'AnalyticsService.dart';
 import 'Responsibility.dart';
 import 'ResponsibilityService.dart';
 import 'VerificationNotificationService.dart';
@@ -20,6 +21,7 @@ class _CaptureResponsibilityScreenState
     extends State<CaptureResponsibilityScreen> {
   final _service = ResponsibilityService();
   final _notifications = VerificationNotificationService();
+  final _analytics = AnalyticsService();
 
   ResponsibilityType _type = ResponsibilityType.homework;
   final _subjectController = TextEditingController();
@@ -107,6 +109,25 @@ class _CaptureResponsibilityScreenState
             : _descriptionController.text.trim(),
         dueAt: _dueAt,
         predictedStartAt: predictedStart,
+      );
+
+      await _analytics.logEvent(
+        AnalyticsEvents.responsibilityCreated,
+        parameters: {
+          AnalyticsParams.responsibilityId: responsibility.id,
+          AnalyticsParams.responsibilityType: _type.name,
+          // Convertimos el booleano a 1 o 0 como exige la convención
+          AnalyticsParams.hasPrediction: predictedStart != null ? 1 : 0,
+        },
+      );
+
+      await _analytics.logEvent(
+        AnalyticsEvents.predictionCreated,
+        parameters: {
+          AnalyticsParams.responsibilityId: responsibility.id,
+          AnalyticsParams.predictionStatus:
+          predictedStart != null ? 'declared' : 'unknown',
+        },
       );
 
       if (predictedStart != null) {
