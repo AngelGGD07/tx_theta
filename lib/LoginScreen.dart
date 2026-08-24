@@ -2,9 +2,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:phi/AppColors.dart';
-import 'package:phi/GoogleSignInButton.dart';
-import 'package:phi/HomeScreen.dart';
+import 'package:BiPi/AppColors.dart';
+import 'package:BiPi/GoogleSignInButton.dart';
+import 'package:BiPi/HomeScreen.dart';
 
 /// -----------------------------------------------------------------------
 /// Idiomas soportados. Se puede ampliar fácilmente agregando más entradas.

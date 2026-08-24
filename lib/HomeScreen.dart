@@ -1,6 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:phi/CaptureResponsibilityScreen.dart';
+import 'package:BiPi/CaptureResponsibilityScreen.dart';
 
 import 'Responsibility.dart';
 import 'ResponsibilityCard.dart';
