@@ -1,0 +1,118 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // ---------- Validación de claves ----------
+    function validResponsibilityKeys() {
+      return request.resource.data.keys().hasOnly([
+        'userId', 'type', 'subject', 'description',
+        'createdAt', 'dueAt', 'predictedStartAt',
+        'predictionStatus', 'startedAt', 'startSource',
+        'completedAt', 'submittedAt', 'status'
+      ]);
+    }
+
+    function validPredictionEventKeys() {
+      return request.resource.data.keys().hasOnly([
+        'userId', 'responsibilityId', 'predictedAt',
+        'predictedStartAt', 'response', 'respondedAt', 'eventId'
+      ]);
+    }
+
+    function validNotificationEventKeys() {
+      return request.resource.data.keys().hasOnly([
+        'userId', 'responsibilityId', 'type', 'at', 'actionSelected'
+      ]);
+    }
+
+    function validConsentKeys() {
+      return request.resource.data.keys().hasOnly([
+        'userId', 'consentVersion', 'appVersion',
+        'accepted', 'acceptedAt', 'withdrawnAt', 'locale'
+      ]);
+    }
+
+    // ---------- Responsibilities ----------
+    match /responsibilities/{docId} {
+      allow read: if isOwner(resource.data.userId);
+
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && validResponsibilityKeys();
+
+      allow update: if isSignedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && validResponsibilityKeys();
+
+      // No se permite delete durante el piloto.
+      allow delete: if false;
+    }
+
+    // ---------- Prediction Events (append-only) ----------
+    match /prediction_events/{docId} {
+      allow read: if isOwner(resource.data.userId);
+
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && validPredictionEventKeys();
+
+      // Se prohíbe update y delete: son append-only.
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ---------- Notification Events (append-only) ----------
+    match /notification_events/{docId} {
+      allow read: if isOwner(resource.data.userId);
+
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && validNotificationEventKeys();
+
+      // Se prohíbe update y delete: son append-only.
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ---------- Pilot Consents ----------
+    match /pilot_consents/{userId} {
+      // El documento se identifica por el userId.
+      allow read: if isSignedIn() && request.auth.uid == userId;
+
+      allow create: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.consentVersion == 'pilot_2026_01'
+        && request.resource.data.appVersion == '1.0.0+1'
+        && request.resource.data.accepted == true
+        && request.resource.data.acceptedAt == request.time
+        && request.resource.data.withdrawnAt == null
+        && request.resource.data.locale is string
+        && validConsentKeys();
+
+      allow update: if isSignedIn()
+        && userId == request.auth.uid
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.consentVersion == 'pilot_2026_01'
+        && request.resource.data.appVersion == '1.0.0+1'
+        && request.resource.data.accepted == true
+        && request.resource.data.acceptedAt == request.time
+        && request.resource.data.withdrawnAt == null
+        && request.resource.data.locale is string
+        && validConsentKeys();
+
+      allow delete: if false;
+    }
+  }
+}

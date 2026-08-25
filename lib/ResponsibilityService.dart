@@ -227,6 +227,7 @@ class ResponsibilityService {
     final now = DateTime.now();
 
     final event = PredictionEvent(
+      userId: _uid,
       responsibilityId: responsibilityId,
       predictedAt: now,
       predictedStartAt: newPredictedStartAt,
@@ -339,6 +340,7 @@ class ResponsibilityService {
     String? actionSelected,
   }) async {
     final event = NotificationEvent(
+      userId: _uid,
       responsibilityId: responsibilityId,
       type: type,
       at: DateTime.now(),

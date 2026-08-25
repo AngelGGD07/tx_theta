@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'firebase_options.dart';
 import 'AnalyticsService.dart';
@@ -11,6 +12,8 @@ import 'HomeScreen.dart';
 import 'ResponsibilityService.dart';
 import 'VerificationNotificationService.dart';
 import 'Responsibility.dart' show StartSource;
+import 'ConsentScreen.dart';
+import 'ConsentService.dart';
 
 // 1. LA LLAVE MÁGICA: Controla los mensajes en pantalla (SnackBar) desde CUALQUIER archivo
 final rootScaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -122,26 +125,122 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class _AuthGate extends StatelessWidget {
+class _AuthGate extends StatefulWidget {
   const _AuthGate();
+
+  @override
+  State<_AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<_AuthGate> {
+  int _consentRetryCount = 0;
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+      builder: (context, authSnapshot) {
+        if (authSnapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        if (snapshot.hasData) {
-          _analytics.setUser(snapshot.data!.uid);
+
+        final user = authSnapshot.data;
+        if (user == null) {
+          _analytics.setUser(null);
+          return const LoginScreen();
+        }
+
+        _analytics.setUser(user.uid);
+        return _buildConsentGate(user.uid);
+      },
+    );
+  }
+
+  Widget _buildConsentGate(String userId) {
+    final consentService = ConsentService();
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      key: ValueKey('consent_${userId}_$_consentRetryCount'),
+      stream: consentService.watchConsent(userId),
+      builder: (context, consentSnapshot) {
+        if (consentSnapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (consentSnapshot.hasError) {
+          return _ConsentError(
+            onRetry: () {
+              setState(() {
+                _consentRetryCount++;
+              });
+            },
+          );
+        }
+
+        if (consentService.hasValidConsent(consentSnapshot.data)) {
           return const HomeScreen();
         }
-        _analytics.setUser(null);
-        return const LoginScreen();
+
+        return const ConsentScreen();
       },
+    );
+  }
+}
+
+class _ConsentError extends StatelessWidget {
+  final VoidCallback onRetry;
+
+  const _ConsentError({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPalette.of(context);
+
+    return Scaffold(
+      backgroundColor: palette.background,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.cloud_off, size: 48, color: palette.textMuted),
+                const SizedBox(height: 16),
+                Text(
+                  'No se pudo verificar el consentimiento.',
+                  style: AppTypography.body(color: palette.textPrimary),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Revisa tu conexión a internet e inténtalo de nuevo.',
+                  style: AppTypography.label(color: palette.textMuted),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Reintentar'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.amber,
+                    foregroundColor: AppColors.deepBlue,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

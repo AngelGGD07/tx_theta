@@ -128,6 +128,7 @@ class Responsibility {
 /// reprogramación crea un nuevo registro. Esto es lo que permite,
 /// más adelante, medir cuántas veces un estudiante negoció consigo mismo.
 class PredictionEvent {
+  final String userId;
   final String responsibilityId;
   final DateTime predictedAt; // Cuándo se hizo esta predicción/respuesta.
   final DateTime? predictedStartAt; // Nueva fecha prevista (si aplica).
@@ -135,6 +136,7 @@ class PredictionEvent {
   final DateTime respondedAt;
 
   PredictionEvent({
+    required this.userId,
     required this.responsibilityId,
     required this.predictedAt,
     this.predictedStartAt,
@@ -143,6 +145,7 @@ class PredictionEvent {
   });
 
   Map<String, dynamic> toFirestore() => {
+    'userId': userId,
     'responsibilityId': responsibilityId,
     'predictedAt': Timestamp.fromDate(predictedAt),
     'predictedStartAt':
@@ -155,12 +158,14 @@ class PredictionEvent {
 /// Eventos de la notificación de verificación, para no confundir
 /// "no llegó la notificación" con "el usuario la ignoró".
 class NotificationEvent {
+  final String userId;
   final String responsibilityId;
   final String type; // 'notification_scheduled' | 'notification_opened' | 'notification_action_selected'
   final DateTime at;
   final String? actionSelected;
 
   NotificationEvent({
+    required this.userId,
     required this.responsibilityId,
     required this.type,
     required this.at,
@@ -168,6 +173,7 @@ class NotificationEvent {
   });
 
   Map<String, dynamic> toFirestore() => {
+    'userId': userId,
     'responsibilityId': responsibilityId,
     'type': type,
     'at': Timestamp.fromDate(at),

@@ -4,7 +4,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:BiPi/AppColors.dart';
 import 'package:BiPi/GoogleSignInButton.dart';
-import 'package:BiPi/HomeScreen.dart';
 
 /// -----------------------------------------------------------------------
 /// Idiomas soportados. Se puede ampliar fácilmente agregando más entradas.
@@ -132,7 +131,8 @@ class _LoginScreenState extends State<LoginScreen> {
         )
             .timeout(const Duration(seconds: 15));
         _showMessage(_t('welcome_back'));
-        _goHome();
+        // Eliminada la navegación manual. _AuthGate reaccionará a
+        // authStateChanges y mostrará ConsentScreen o HomeScreen.
       } else {
         await _auth
             .createUserWithEmailAndPassword(
@@ -141,7 +141,8 @@ class _LoginScreenState extends State<LoginScreen> {
         )
             .timeout(const Duration(seconds: 15));
         _showMessage(_t('account_created'));
-        _goHome();
+        // Eliminada la navegación manual. _AuthGate reaccionará a
+        // authStateChanges y mostrará ConsentScreen.
       }
     } catch (e) {
       _showMessage(_friendlyAuthError(e));
@@ -168,19 +169,13 @@ class _LoginScreenState extends State<LoginScreen> {
           .signInWithCredential(credential)
           .timeout(const Duration(seconds: 15));
       _showMessage(_t('welcome_back'));
-      _goHome();
+      // Eliminada la navegación manual. _AuthGate reaccionará a
+      // authStateChanges.
     } catch (e) {
       _showMessage(_friendlyAuthError(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  void _goHome() {
-    if (!mounted) return;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const HomeScreen()),
-    );
   }
 
   void _showMessage(String message) {
