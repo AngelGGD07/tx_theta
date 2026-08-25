@@ -3,6 +3,7 @@ import 'AnalyticsService.dart';
 import 'Responsibility.dart';
 import 'ResponsibilityService.dart';
 import 'main.dart';
+import 'AppColors.dart';
 
 // Set global en memoria para deduplicar la exposición de la confrontación
 // durante el ciclo de vida de la aplicación.
@@ -65,6 +66,7 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = AppPalette.of(context);
     final r = widget.responsibility;
     final hasStarted = r.startedAt != null;
 
@@ -92,6 +94,12 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: palette.surface,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: palette.border),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -99,35 +107,48 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
           children: [
             Text(
               r.subject ?? _typeLabel(r.type),
-              style: const TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.w600),
+              style: AppTypography.label(
+                color: palette.textPrimary,
+                size: 16,
+              ).copyWith(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 4),
             if (r.predictedStartAt != null)
               Text(
                 'Pensabas comenzar ${_relativeDay(r.predictedStartAt!)}',
-                style: TextStyle(color: Colors.grey.shade600),
+                style: AppTypography.body(
+                  color: palette.textSecondary,
+                  size: 14,
+                ),
               ),
             const SizedBox(height: 4),
             Text(
               'Entrega ${_relativeDay(r.dueAt)}',
-              style: TextStyle(color: Colors.grey.shade600),
+              style: AppTypography.body(
+                color: palette.textSecondary,
+                size: 14,
+              ),
             ),
             const SizedBox(height: 12),
             if (hasStarted) ...[
-              _buildConfrontation(r),
+              _buildConfrontation(palette, r),
             ] else ...[
               Row(
                 children: [
                   Expanded(
                     child: ElevatedButton(
                       onPressed: _markStarted,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.amber,
+                        foregroundColor: AppColors.deepBlue,
+                      ),
                       child: const Text('Empecé a trabajar en esto'),
                     ),
                   ),
                   IconButton(
                     tooltip: '¿Empezaste antes y olvidaste registrarlo?',
                     icon: const Icon(Icons.history),
+                    color: palette.textMuted,
                     onPressed: _markStartedInThePast,
                   ),
                 ],
@@ -139,11 +160,21 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
     );
   }
 
-  Widget _buildConfrontation(Responsibility r) {
+  Widget _buildConfrontation(AppPalette palette, Responsibility r) {
     if (r.predictedStartAt == null || r.startedAt == null) {
-      return Text(
-        'Empezaste ${_relativeDay(r.startedAt!)}.',
-        style: const TextStyle(fontStyle: FontStyle.italic),
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: palette.confrontationBackground,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: palette.confrontationBorder),
+        ),
+        child: Text(
+          'Empezaste ${_relativeDay(r.startedAt!)}.',
+          style: AppTypography.body(
+            color: palette.confrontationText,
+          ).copyWith(fontStyle: FontStyle.italic),
+        ),
       );
     }
     final deviationHours = r.startDeviationHours!;
@@ -180,10 +211,16 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.grey.shade100,
+        color: palette.confrontationBackground,
         borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: palette.confrontationBorder),
       ),
-      child: Text(message, style: const TextStyle(fontStyle: FontStyle.italic)),
+      child: Text(
+        message,
+        style: AppTypography.body(
+          color: palette.confrontationText,
+        ).copyWith(fontStyle: FontStyle.italic),
+      ),
     );
   }
 
@@ -226,22 +263,30 @@ Future<void> showPastStartSelector(
     ResponsibilityService service,
     StartSource source,
     ) async {
+  final palette = AppPalette.of(context);
   final now = DateTime.now();
 
   // 1. Esperamos la decisión del modal.
   final choice = await showModalBottomSheet<dynamic>(
     context: context,
+    backgroundColor: palette.surface,
     builder: (ctx) => SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
-            title: const Text('Hoy, más temprano'),
+            title: Text(
+              'Hoy, más temprano',
+              style: AppTypography.body(color: palette.textPrimary),
+            ),
             onTap: () => Navigator.pop(
                 ctx, DateTime(now.year, now.month, now.day, 9)),
           ),
           ListTile(
-            title: const Text('Ayer'),
+            title: Text(
+              'Ayer',
+              style: AppTypography.body(color: palette.textPrimary),
+            ),
             onTap: () {
               final yesterday = now.subtract(const Duration(days: 1));
               Navigator.pop(ctx,
@@ -249,7 +294,10 @@ Future<void> showPastStartSelector(
             },
           ),
           ListTile(
-            title: const Text('Elegir fecha y hora'),
+            title: Text(
+              'Elegir fecha y hora',
+              style: AppTypography.body(color: palette.textPrimary),
+            ),
             onTap: () => Navigator.pop(ctx, 'custom'), // Retornamos un flag
           ),
         ],

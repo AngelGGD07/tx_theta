@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:BiPi/AppColors.dart';
 import 'package:BiPi/GoogleSignInButton.dart';
+import 'package:BiPi/ThemeToggleButton.dart';
 
 /// -----------------------------------------------------------------------
 /// Idiomas soportados. Se puede ampliar fácilmente agregando más entradas.
@@ -228,12 +229,13 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  /// Selector de idioma como botón real (pill con borde), no un TextButton
-  /// suelto — se lee como una acción deliberada, no como un ícono perdido.
+  /// Selector de idioma y tema.
   Widget _buildTopBar(AppPalette palette) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
+        const ThemeToggleButton(),
+        const SizedBox(width: 8),
         OutlinedButton.icon(
           onPressed: _toggleLanguage,
           style: OutlinedButton.styleFrom(
@@ -255,7 +257,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  /// Logo real + "BiPi" (Sanchez) + tagline "Best Planner" (Sanchez
+  /// Logo real + "BiPi" (Figtree) + tagline "Best Planner" (Figtree
   /// itálica). Horizontal: logo a la izquierda, texto a la izquierda.
   /// El logo va en tarjeta blanca con sombra para aislarlo del fondo.
   Widget _buildLogoAndName(AppPalette palette) {

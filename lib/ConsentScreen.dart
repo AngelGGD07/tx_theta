@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import 'AppColors.dart';
 import 'ConsentService.dart';
+import 'ThemeToggleButton.dart';
 
 class ConsentScreen extends StatefulWidget {
   const ConsentScreen({super.key});
@@ -39,7 +40,6 @@ class _ConsentScreenState extends State<ConsentScreen> {
     try {
       await _consentService.acceptConsent(userId: user.uid);
       // La actualización del stream en _AuthGate hará que se muestre Home.
-      // No es necesario setState aquí; la pantalla será reemplazada.
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -59,7 +59,6 @@ class _ConsentScreenState extends State<ConsentScreen> {
     try {
       await FirebaseAuth.instance.signOut();
       // _AuthGate reaccionará a authStateChanges y mostrará Login.
-      // No se realiza setState aquí.
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -81,7 +80,13 @@ class _ConsentScreenState extends State<ConsentScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: const [
+                  ThemeToggleButton(),
+                ],
+              ),
+              const SizedBox(height: 8),
               Text(
                 'Consentimiento informado',
                 style: AppTypography.screenTitle(color: palette.textPrimary),
@@ -197,7 +202,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
                 const SizedBox(height: 12),
                 Text(
                   _error!,
-                  style: const TextStyle(color: Colors.red),
+                  style: AppTypography.body(color: palette.destructive),
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -205,7 +210,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
                 const SizedBox(height: 12),
                 Text(
                   _signOutError!,
-                  style: const TextStyle(color: Colors.red),
+                  style: AppTypography.body(color: palette.destructive),
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -217,8 +222,8 @@ class _ConsentScreenState extends State<ConsentScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.amber,
                   foregroundColor: AppColors.deepBlue,
-                  disabledBackgroundColor: palette.border,
-                  disabledForegroundColor: palette.textMuted,
+                  disabledBackgroundColor: palette.disabledBackground,
+                  disabledForegroundColor: palette.disabledForeground,
                   minimumSize: const Size(double.infinity, 52),
                   elevation: 0,
                   shape: RoundedRectangleBorder(

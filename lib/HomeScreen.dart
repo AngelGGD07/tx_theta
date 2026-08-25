@@ -7,6 +7,8 @@ import 'ResponsibilityCard.dart';
 import 'ResponsibilityService.dart';
 import 'VerificationNotificationService.dart';
 import 'main.dart'; // Contiene rootScaffoldMessengerKey y pendingNotificationAction
+import 'AppColors.dart';
+import 'ThemeToggleButton.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -144,13 +146,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = AppPalette.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('BiPi'),
+        title: Text('BiPi', style: AppTypography.logo(color: palette.textPrimary, size: 24)),
         actions: [
+          const ThemeToggleButton(),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () => FirebaseAuth.instance.signOut(),
+            tooltip: 'Cerrar sesión',
           ),
         ],
       ),
@@ -165,7 +170,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
           if (snapshot.hasError) {
             return Center(
-              child: Text('Error: ${snapshot.error}'),
+              child: Text(
+                'Error: ${snapshot.error}',
+                style: AppTypography.body(color: palette.textPrimary),
+              ),
             );
           }
 
@@ -198,6 +206,8 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         icon: const Icon(Icons.add),
         label: const Text('Nueva'),
+        backgroundColor: AppColors.amber,
+        foregroundColor: AppColors.deepBlue,
       ),
     );
   }
@@ -208,6 +218,7 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = AppPalette.of(context);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -217,12 +228,13 @@ class _EmptyState extends StatelessWidget {
             Icon(
               Icons.inbox_outlined,
               size: 48,
-              color: Colors.grey.shade400,
+              color: palette.textMuted,
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'No tienes responsabilidades registradas todavía.',
               textAlign: TextAlign.center,
+              style: AppTypography.body(color: palette.textPrimary),
             ),
           ],
         ),

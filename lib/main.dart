@@ -14,6 +14,7 @@ import 'VerificationNotificationService.dart';
 import 'Responsibility.dart' show StartSource;
 import 'ConsentScreen.dart';
 import 'ConsentService.dart';
+import 'ThemeModeController.dart';
 
 // 1. LA LLAVE MÁGICA: Controla los mensajes en pantalla (SnackBar) desde CUALQUIER archivo
 final rootScaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -113,14 +114,19 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      // 3. CONECTAMOS LA LLAVE A LA RAÍZ DE LA APP
-      scaffoldMessengerKey: rootScaffoldMessengerKey,
-      title: 'BiPi',
-      theme: buildLightTheme(),
-      darkTheme: buildDarkTheme(),
-      themeMode: ThemeMode.system,
-      home: const _AuthGate(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeModeNotifier,
+      builder: (context, themeMode, _) {
+        return MaterialApp(
+          // 3. CONECTAMOS LA LLAVE A LA RAÍZ DE LA APP
+          scaffoldMessengerKey: rootScaffoldMessengerKey,
+          title: 'BiPi',
+          theme: buildLightTheme(),
+          darkTheme: buildDarkTheme(),
+          themeMode: themeMode,
+          home: const _AuthGate(),
+        );
+      },
     );
   }
 }

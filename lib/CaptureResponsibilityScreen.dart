@@ -3,6 +3,7 @@ import 'AnalyticsService.dart';
 import 'Responsibility.dart';
 import 'ResponsibilityService.dart';
 import 'VerificationNotificationService.dart';
+import 'AppColors.dart';
 
 /// Predicción de inicio: opciones simples, tal como se definió en la spec.
 /// "Todavía no lo sé" deja predictedStartAt = null explícitamente, nunca
@@ -116,7 +117,6 @@ class _CaptureResponsibilityScreenState
         parameters: {
           AnalyticsParams.responsibilityId: responsibility.id,
           AnalyticsParams.responsibilityType: _type.name,
-          // Convertimos el booleano a 1 o 0 como exige la convención
           AnalyticsParams.hasPrediction: predictedStart != null ? 1 : 0,
         },
       );
@@ -172,90 +172,118 @@ class _CaptureResponsibilityScreenState
 
   @override
   Widget build(BuildContext context) {
+    final palette = AppPalette.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Nueva responsabilidad')),
+      appBar: AppBar(
+        title: Text(
+          'Nueva responsabilidad',
+          style: AppTypography.screenTitle(color: palette.textPrimary, size: 20),
+        ),
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // --- Tipo ---
-            const Text('Tipo', style: TextStyle(fontWeight: FontWeight.w600)),
+            Text(
+              'Tipo',
+              style: AppTypography.label(
+                color: palette.textPrimary,
+                size: 15,
+              ).copyWith(fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               children: ResponsibilityType.values.map((t) {
-                final selected = _type == t;
-                return ChoiceChip(
-                  label: Text(_typeLabel(t)),
-                  selected: selected,
-                  onSelected: (_) => setState(() => _type = t),
+                return _buildChoiceChip(
+                  label: _typeLabel(t),
+                  selected: _type == t,
+                  onSelected: () => setState(() => _type = t),
                 );
               }).toList(),
             ),
             const SizedBox(height: 20),
 
             // --- Materia / descripción ---
-            TextField(
+            _buildTextField(
               controller: _subjectController,
-              decoration: const InputDecoration(
-                labelText: 'Materia (opcional)',
-                border: OutlineInputBorder(),
-              ),
+              label: 'Materia (opcional)',
+              palette: palette,
             ),
             const SizedBox(height: 12),
-            TextField(
+            _buildTextField(
               controller: _descriptionController,
-              decoration: const InputDecoration(
-                labelText: 'Descripción (opcional)',
-                border: OutlineInputBorder(),
-              ),
+              label: 'Descripción (opcional)',
               maxLines: 2,
+              palette: palette,
             ),
             const SizedBox(height: 20),
 
             // --- Fecha de entrega ---
-            const Text('Entrega',
-                style: TextStyle(fontWeight: FontWeight.w600)),
+            Text(
+              'Entrega',
+              style: AppTypography.label(
+                color: palette.textPrimary,
+                size: 15,
+              ).copyWith(fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 8),
             OutlinedButton.icon(
               onPressed: _pickDueDate,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: palette.textPrimary,
+                side: BorderSide(color: palette.border),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+              ),
               icon: const Icon(Icons.event),
-              label: Text(_formatDateTime(_dueAt)),
+              label: Text(
+                _formatDateTime(_dueAt),
+                style: AppTypography.body(color: palette.textPrimary),
+              ),
             ),
             const SizedBox(height: 20),
 
             // --- Predicción de inicio ---
-            const Text('¿Cuándo crees que empezarás?',
-                style: TextStyle(fontWeight: FontWeight.w600)),
+            Text(
+              '¿Cuándo crees que empezarás?',
+              style: AppTypography.label(
+                color: palette.textPrimary,
+                size: 15,
+              ).copyWith(fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
-                ChoiceChip(
-                  label: const Text('Hoy'),
+                _buildChoiceChip(
+                  label: 'Hoy',
                   selected: _startGuess == _StartGuess.today,
-                  onSelected: (_) =>
+                  onSelected: () =>
                       setState(() => _startGuess = _StartGuess.today),
                 ),
-                ChoiceChip(
-                  label: const Text('Mañana'),
+                _buildChoiceChip(
+                  label: 'Mañana',
                   selected: _startGuess == _StartGuess.tomorrow,
-                  onSelected: (_) =>
+                  onSelected: () =>
                       setState(() => _startGuess = _StartGuess.tomorrow),
                 ),
-                ChoiceChip(
-                  label: Text(_customStartDate != null
+                _buildChoiceChip(
+                  label: _customStartDate != null
                       ? _formatDateTime(_customStartDate!)
-                      : 'Elegir fecha'),
+                      : 'Elegir fecha',
                   selected: _startGuess == _StartGuess.pickDate,
-                  onSelected: (_) => _pickCustomStartDate(),
+                  onSelected: () => _pickCustomStartDate(),
                 ),
-                ChoiceChip(
-                  label: const Text('Todavía no lo sé'),
+                _buildChoiceChip(
+                  label: 'Todavía no lo sé',
                   selected: _startGuess == _StartGuess.unknown,
-                  onSelected: (_) =>
+                  onSelected: () =>
                       setState(() => _startGuess = _StartGuess.unknown),
                 ),
               ],
@@ -263,15 +291,82 @@ class _CaptureResponsibilityScreenState
             const SizedBox(height: 32),
 
             _isSaving
-                ? const Center(child: CircularProgressIndicator())
+                ? Center(
+              child: CircularProgressIndicator(
+                color: palette.textPrimary,
+              ),
+            )
                 : ElevatedButton(
               onPressed: _startGuess == null ? null : _save,
               style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.amber,
+                foregroundColor: AppColors.deepBlue,
+                disabledBackgroundColor: palette.disabledBackground,
+                disabledForegroundColor: palette.disabledForeground,
                 minimumSize: const Size(double.infinity, 50),
               ),
-              child: const Text('Guardar'),
+              child: Text(
+                'Guardar',
+                style: AppTypography.button(
+                  color: AppColors.deepBlue,
+                  size: 16,
+                ),
+              ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChoiceChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onSelected,
+  }) {
+    final palette = AppPalette.of(context);
+    return ChoiceChip(
+      label: Text(
+        label,
+        style: AppTypography.label(
+          color: selected ? palette.onPrimaryAction : palette.textPrimary,
+        ),
+      ),
+      selected: selected,
+      selectedColor: palette.primaryAction,
+      backgroundColor: palette.surface,
+      side: BorderSide(color: palette.border),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      onSelected: (_) => onSelected(),
+    );
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    required AppPalette palette,
+    int maxLines = 1,
+  }) {
+    return TextField(
+      controller: controller,
+      maxLines: maxLines,
+      style: AppTypography.body(color: palette.textPrimary),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: AppTypography.label(color: palette.textMuted),
+        filled: true,
+        fillColor: palette.surface,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: palette.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: palette.textPrimary, width: 1.4),
         ),
       ),
     );
