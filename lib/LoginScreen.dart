@@ -18,7 +18,8 @@ class _Strings {
       'login_title': 'Iniciar sesión',
       'signup_title': 'Crear cuenta',
       'email': 'Correo institucional o personal',
-      'password': 'Contraseña (mínimo 6 caracteres)',
+      'password_login': 'Contraseña',
+      'password_signup': 'Contraseña, mínimo 6 caracteres',
       'enter': 'Entrar',
       'register': 'Registrarse',
       'no_account': '¿No tienes cuenta? Regístrate',
@@ -28,19 +29,31 @@ class _Strings {
       'welcome_back': '¡Bienvenido de nuevo!',
       'account_created': '¡Cuenta creada con éxito!',
       'generic_error': 'Ocurrió un error',
-      'no_internet': 'No se pudo conectar. Revisa tu conexión a internet e inténtalo de nuevo.',
+      'no_internet':
+      'No se pudo conectar. Revisa tu conexión a internet e inténtalo de nuevo.',
       'error_invalid_credentials': 'Correo o contraseña incorrectos.',
-      'error_invalid_email': 'El correo no tiene un formato válido.',
+      'error_invalid_email': 'Introduce un correo válido.',
       'error_email_in_use': 'Ya existe una cuenta con ese correo.',
-      'error_weak_password': 'La contraseña es muy débil. Usa al menos 6 caracteres.',
-      'error_too_many_requests': 'Demasiados intentos. Espera un momento e inténtalo de nuevo.',
+      'error_weak_password':
+      'La contraseña es muy débil. Usa al menos 6 caracteres.',
+      'error_too_many_requests':
+      'Demasiados intentos. Espera un momento e inténtalo de nuevo.',
+      'error_internal':
+      'No pudimos completar el acceso. Revisa tu conexión e inténtalo nuevamente.',
+      'empty_credentials': 'Introduce las credenciales de tu cuenta.',
+      'empty_email': 'Introduce tu correo.',
+      'invalid_email_format': 'Introduce un correo válido.',
+      'empty_password': 'Introduce tu contraseña.',
+      'invalid_password': 'Contraseña inválida.',
+      'short_password': 'La contraseña debe tener al menos 6 caracteres.',
     },
     AppLanguage.en: {
       'tagline': 'Best Planner',
       'login_title': 'Log in',
       'signup_title': 'Create account',
       'email': 'School or personal email',
-      'password': 'Password (min. 6 characters)',
+      'password_login': 'Password',
+      'password_signup': 'Password, min. 6 characters',
       'enter': 'Log in',
       'register': 'Sign up',
       'no_account': "Don't have an account? Sign up",
@@ -50,12 +63,23 @@ class _Strings {
       'welcome_back': 'Welcome back!',
       'account_created': 'Account created successfully!',
       'generic_error': 'Something went wrong',
-      'no_internet': "Couldn't connect. Check your internet connection and try again.",
+      'no_internet':
+      "Couldn't connect. Check your internet connection and try again.",
       'error_invalid_credentials': 'Incorrect email or password.',
-      'error_invalid_email': "That email doesn't look valid.",
+      'error_invalid_email': 'Enter a valid email.',
       'error_email_in_use': 'An account with that email already exists.',
-      'error_weak_password': 'Password is too weak. Use at least 6 characters.',
-      'error_too_many_requests': 'Too many attempts. Please wait a moment and try again.',
+      'error_weak_password':
+      'Password is too weak. Use at least 6 characters.',
+      'error_too_many_requests':
+      'Too many attempts. Please wait a moment and try again.',
+      'error_internal':
+      "We couldn't complete your login. Check your connection and try again.",
+      'empty_credentials': 'Enter your account credentials.',
+      'empty_email': 'Enter your email.',
+      'invalid_email_format': 'Enter a valid email.',
+      'empty_password': 'Enter your password.',
+      'invalid_password': 'Invalid password.',
+      'short_password': 'Password must be at least 6 characters.',
     },
   };
 
@@ -89,9 +113,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   String _t(String key) => _Strings.t(_lang, key);
 
-  /// Traduce errores comunes de Firebase Auth a mensajes claros en el
-  /// idioma actual, en vez de mostrar el texto crudo (en inglés) que
-  /// devuelve Firebase por defecto.
+  /// Traduce errores comunes de Firebase Auth a mensajes claros.
   String _friendlyAuthError(Object error) {
     if (error is TimeoutException) {
       return _t('no_internet');
@@ -112,16 +134,61 @@ class _LoginScreenState extends State<LoginScreen> {
           return _t('error_weak_password');
         case 'too-many-requests':
           return _t('error_too_many_requests');
+        case 'internal-error':
+          return _t('error_internal');
         default:
-          return error.message ?? _t('generic_error');
+          return _t('generic_error');
       }
     }
     return _t('generic_error');
   }
 
+  /// Valida localmente los campos de email/password.
+  /// Devuelve null si la validación pasa, o el mensaje de error.
+  String? _validateFields() {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (email.isEmpty && password.isEmpty) {
+      return _t('empty_credentials');
+    }
+
+    if (email.isEmpty) {
+      return _t('empty_email');
+    }
+
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+      return _t('invalid_email_format');
+    }
+
+    if (password.isEmpty) {
+      return _t('empty_password');
+    }
+
+    if (_isLogin) {
+      if (password.length < 6) {
+        return _t('invalid_password');
+      }
+    } else {
+      if (password.length < 6) {
+        return _t('short_password');
+      }
+    }
+
+    return null;
+  }
+
   // --------------------------- AUTENTICACIÓN ---------------------------
 
   Future<void> _authenticate() async {
+    if (_isLoading) return;
+
+    final validationError = _validateFields();
+    if (validationError != null) {
+      _showMessage(validationError);
+      return;
+    }
+
     setState(() => _isLoading = true);
     try {
       if (_isLogin) {
@@ -130,22 +197,22 @@ class _LoginScreenState extends State<LoginScreen> {
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         )
-            .timeout(const Duration(seconds: 15));
+            .timeout(const Duration(seconds: 6));
+        if (!mounted) return;
         _showMessage(_t('welcome_back'));
-        // Eliminada la navegación manual. _AuthGate reaccionará a
-        // authStateChanges y mostrará ConsentScreen o HomeScreen.
       } else {
         await _auth
             .createUserWithEmailAndPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         )
-            .timeout(const Duration(seconds: 15));
+            .timeout(const Duration(seconds: 6));
+        if (!mounted) return;
         _showMessage(_t('account_created'));
-        // Eliminada la navegación manual. _AuthGate reaccionará a
-        // authStateChanges y mostrará ConsentScreen.
       }
     } catch (e) {
+      debugPrint('Auth error: $e');
+      if (!mounted) return;
       _showMessage(_friendlyAuthError(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -153,10 +220,13 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _signInWithGoogle() async {
+    if (_isLoading) return;
+
     setState(() => _isLoading = true);
     try {
       final googleUser =
       await _googleSignIn.signIn().timeout(const Duration(seconds: 15));
+      if (!mounted) return;
       if (googleUser == null) {
         setState(() => _isLoading = false);
         return;
@@ -169,10 +239,11 @@ class _LoginScreenState extends State<LoginScreen> {
       await _auth
           .signInWithCredential(credential)
           .timeout(const Duration(seconds: 15));
+      if (!mounted) return;
       _showMessage(_t('welcome_back'));
-      // Eliminada la navegación manual. _AuthGate reaccionará a
-      // authStateChanges.
     } catch (e) {
+      debugPrint('Auth error: $e');
+      if (!mounted) return;
       _showMessage(_friendlyAuthError(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -185,12 +256,13 @@ class _LoginScreenState extends State<LoginScreen> {
       SnackBar(
         content: Text(message,
             style: AppTypography.body(color: palette.surface)),
-        backgroundColor: AppColors.deepBlue,
+        backgroundColor: palette.textPrimary,
       ),
     );
   }
 
   void _toggleLanguage() {
+    if (_isLoading) return;
     setState(() {
       _lang = _lang == AppLanguage.es ? AppLanguage.en : AppLanguage.es;
     });
@@ -237,7 +309,7 @@ class _LoginScreenState extends State<LoginScreen> {
         const ThemeToggleButton(),
         const SizedBox(width: 8),
         OutlinedButton.icon(
-          onPressed: _toggleLanguage,
+          onPressed: _isLoading ? null : _toggleLanguage,
           style: OutlinedButton.styleFrom(
             foregroundColor: palette.textPrimary,
             backgroundColor: palette.surface,
@@ -257,9 +329,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  /// Logo real + "BiPi" (Figtree) + tagline "Best Planner" (Figtree
-  /// itálica). Horizontal: logo a la izquierda, texto a la izquierda.
-  /// El logo va en tarjeta blanca con sombra para aislarlo del fondo.
+  /// Logo real + "BiPi" + tagline.
   Widget _buildLogoAndName(AppPalette palette) {
     return Center(
       child: Row(
@@ -273,7 +343,7 @@ class _LoginScreenState extends State<LoginScreen> {
               borderRadius: BorderRadius.circular(18),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.08),
+                  color: Colors.black.withValues(alpha: 0.08),
                   blurRadius: 14,
                   offset: const Offset(0, 4),
                 ),
@@ -301,10 +371,13 @@ class _LoginScreenState extends State<LoginScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('BiPi', style: AppTypography.logo(color: palette.textPrimary, size: 28)),
+              Text('BiPi',
+                  style: AppTypography.logo(
+                      color: palette.textPrimary, size: 28)),
               const SizedBox(height: 2),
               Text(_t('tagline'),
-                  style: AppTypography.tagline(color: palette.textMuted, size: 13)),
+                  style: AppTypography.tagline(
+                      color: palette.textMuted, size: 13)),
             ],
           ),
         ],
@@ -321,16 +394,12 @@ class _LoginScreenState extends State<LoginScreen> {
         transitionBuilder: (child, animation) {
           final childKey = child.key as ValueKey<bool>;
           final isEntering = childKey.value == _isLogin;
-
           final Offset edgeOffset = isEntering
               ? Offset(_isLogin ? -1.0 : 1.0, 0)
               : Offset(_isLogin ? 1.0 : -1.0, 0);
-
-          final slide = Tween<Offset>(
-            begin: edgeOffset,
-            end: Offset.zero,
-          ).animate(animation);
-
+          final slide =
+          Tween<Offset>(begin: edgeOffset, end: Offset.zero)
+              .animate(animation);
           return SlideTransition(position: slide, child: child);
         },
         child: Column(
@@ -349,20 +418,26 @@ class _LoginScreenState extends State<LoginScreen> {
               label: _t('email'),
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
-              onSubmitted: (_) => _passwordFocusNode.requestFocus(),
+              onSubmitted: _isLoading
+                  ? null
+                  : (_) => _passwordFocusNode.requestFocus(),
             ),
             const SizedBox(height: 14),
             _buildTextField(
               palette: palette,
               controller: _passwordController,
-              label: _t('password'),
+              label: _isLogin
+                  ? _t('password_login')
+                  : _t('password_signup'),
               obscureText: _obscurePassword,
               focusNode: _passwordFocusNode,
               textInputAction: TextInputAction.done,
-              onSubmitted: (_) => _authenticate(),
+              onSubmitted: _isLoading ? null : (_) => _authenticate(),
               suffixIcon: IconButton(
-                onPressed: () =>
-                    setState(() => _obscurePassword = !_obscurePassword),
+                onPressed: _isLoading
+                    ? null
+                    : () => setState(
+                        () => _obscurePassword = !_obscurePassword),
                 icon: ColorFiltered(
                   colorFilter: ColorFilter.mode(
                     palette.textMuted,
@@ -375,7 +450,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     width: 22,
                     height: 22,
                     errorBuilder: (context, error, stackTrace) => Icon(
-                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                      _obscurePassword
+                          ? Icons.visibility_off
+                          : Icons.visibility,
                       color: palette.textMuted,
                       size: 22,
                     ),
@@ -386,13 +463,13 @@ class _LoginScreenState extends State<LoginScreen> {
             const SizedBox(height: 24),
             _isLoading
                 ? Center(
-              child: CircularProgressIndicator(color: palette.textPrimary),
-            )
+                child: CircularProgressIndicator(
+                    color: palette.textPrimary))
                 : ElevatedButton(
               onPressed: _authenticate,
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.amber,
-                foregroundColor: AppColors.deepBlue,
+                backgroundColor: palette.primaryAction,
+                foregroundColor: palette.onPrimaryAction,
                 minimumSize: const Size(double.infinity, 52),
                 elevation: 0,
                 shape: RoundedRectangleBorder(
@@ -401,7 +478,8 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               child: Text(
                 _isLogin ? _t('enter') : _t('register'),
-                style: AppTypography.button(color: AppColors.deepBlue, size: 16),
+                style: AppTypography.button(
+                    color: palette.onPrimaryAction, size: 16),
               ),
             ),
             const SizedBox(height: 20),
@@ -414,10 +492,13 @@ class _LoginScreenState extends State<LoginScreen> {
             const SizedBox(height: 16),
             Center(
               child: TextButton(
-                onPressed: () => setState(() => _isLogin = !_isLogin),
+                onPressed: _isLoading
+                    ? null
+                    : () => setState(() => _isLogin = !_isLogin),
                 child: Text(
                   _isLogin ? _t('no_account') : _t('have_account'),
-                  style: AppTypography.label(color: palette.textPrimary, size: 14),
+                  style: AppTypography.label(
+                      color: palette.textPrimary, size: 14),
                 ),
               ),
             ),
@@ -452,7 +533,8 @@ class _LoginScreenState extends State<LoginScreen> {
         filled: true,
         suffixIcon: suffixIcon,
         fillColor: palette.surface,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding:
+        const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
@@ -475,7 +557,8 @@ class _LoginScreenState extends State<LoginScreen> {
         Expanded(child: Divider(color: palette.border)),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: Text(_t('or'), style: AppTypography.label(color: palette.textMuted)),
+          child: Text(_t('or'),
+              style: AppTypography.label(color: palette.textMuted)),
         ),
         Expanded(child: Divider(color: palette.border)),
       ],

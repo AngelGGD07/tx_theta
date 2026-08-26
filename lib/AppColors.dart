@@ -1,148 +1,205 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Colores de marca fijos (logo, acentos). No cambian entre modo
-/// claro/oscuro — son la identidad visual de BiPi en cualquier contexto.
+/// Colores de marca fijos que no dependen del tema.
 class AppColors {
   AppColors._();
 
-  static const amber = Color(0xFFFFCC70);
-  static const deepBlue = Color(0xFF061E29);
-  static const teal = Color(0xFF1D546D);
-  static const tealLight = Color(0xFF5F9598);
-  static const offWhite = Color(0xFFF3F4F4);
+  static const amber = Color(0xFFF1C376);
+  static const deepBlue = Color(0xFF263229);
 }
 
-/// Paleta que SÍ cambia según el modo claro/oscuro. Úsala para fondo,
-/// superficie y texto en vez de AppColors directamente — así cada pantalla
-/// se adapta sola sin lógica repetida.
-class AppPalette {
+/// Extensión de tema que contiene roles semánticos adicionales
+/// que no están cubiertos por el `ColorScheme` estándar.
+class BiPiThemeExtension extends ThemeExtension<BiPiThemeExtension> {
   final Color background;
-  final Color surface;
   final Color surfaceElevated;
-  final Color textPrimary;
   final Color textSecondary;
   final Color textMuted;
-  final Color border;
-  final Color primaryAction;
-  final Color onPrimaryAction;
-  final Color destructive;
-  final Color warning;
-  final Color success;
-  final Color disabledBackground;
-  final Color disabledForeground;
   final Color confrontationBackground;
   final Color confrontationBorder;
   final Color confrontationText;
+  final Color disabledBackground;
+  final Color disabledForeground;
+  final Color warning;
+  final Color success;
 
-  const AppPalette({
+  const BiPiThemeExtension({
     required this.background,
-    required this.surface,
     required this.surfaceElevated,
-    required this.textPrimary,
     required this.textSecondary,
     required this.textMuted,
-    required this.border,
-    required this.primaryAction,
-    required this.onPrimaryAction,
-    required this.destructive,
-    required this.warning,
-    required this.success,
-    required this.disabledBackground,
-    required this.disabledForeground,
     required this.confrontationBackground,
     required this.confrontationBorder,
     required this.confrontationText,
+    required this.disabledBackground,
+    required this.disabledForeground,
+    required this.warning,
+    required this.success,
   });
 
-  static const light = AppPalette(
-    background: Color(0xFFF3F4F4),
-    surface: Colors.white,
-    surfaceElevated: Color(0xFFE9F0F2),
-    textPrimary: Color(0xFF061E29),
-    textSecondary: Color(0xFF1D546D),
-    textMuted: Color(0xFF5F7A82),
-    border: Color(0xFFB8CCD0),
-    primaryAction: Color(0xFFFFCC70),
-    onPrimaryAction: Color(0xFF061E29),
-    destructive: Color(0xFFB3261E),
+  static const light = BiPiThemeExtension(
+    background: Color(0xFFFFF9F6),
+    surfaceElevated: Color(0xFFFFF4F4),
+    textSecondary: Color(0xFF606C5D),
+    textMuted: Color(0xFF778174),
+    confrontationBackground: Color(0xFFF7E6C4),
+    confrontationBorder: Color(0xFF606C5D),
+    confrontationText: Color(0xFF263229),
+    disabledBackground: Color(0xFFE7E0D6),
+    disabledForeground: Color(0xFF8C8A83),
     warning: Color(0xFF8A5A00),
     success: Color(0xFF1B5E20),
-    disabledBackground: Color(0xFFD8DEE0),
-    disabledForeground: Color(0xFF8A9BA0),
-    confrontationBackground: Color(0xFFE7F0F2),
-    confrontationBorder: Color(0xFF1D546D),
-    confrontationText: Color(0xFF061E29),
   );
 
-  static const dark = AppPalette(
-    background: Color(0xFF061E29),
-    surface: Color(0xFF0C2A38),
-    surfaceElevated: Color(0xFF123746),
-    textPrimary: Color(0xFFF3F4F4),
-    textSecondary: Color(0xFFB8CCD0),
-    textMuted: Color(0xFF7A98A0),
-    border: Color(0xFF2C4A5A),
-    primaryAction: Color(0xFFFFCC70),
-    onPrimaryAction: Color(0xFF061E29),
-    destructive: Color(0xFFFFB4AB),
+  static const dark = BiPiThemeExtension(
+    background: Color(0xFF1D241F),
+    surfaceElevated: Color(0xFF303A32),
+    textSecondary: Color(0xFFE5D8C2),
+    textMuted: Color(0xFFB8B0A2),
+    confrontationBackground: Color(0xFF3B382D),
+    confrontationBorder: Color(0xFFF1C376),
+    confrontationText: Color(0xFFFFF4F4),
+    disabledBackground: Color(0xFF343B35),
+    disabledForeground: Color(0xFF858E86),
     warning: Color(0xFFFFD54F),
     success: Color(0xFFA5D6A7),
-    disabledBackground: Color(0xFF1A3644),
-    disabledForeground: Color(0xFF5C7884),
-    confrontationBackground: Color(0xFF123746),
-    confrontationBorder: Color(0xFF5F9598),
-    confrontationText: Color(0xFFF3F4F4),
   );
 
-  static AppPalette of(BuildContext context) =>
-      Theme.of(context).brightness == Brightness.dark ? dark : light;
+  @override
+  BiPiThemeExtension copyWith({
+    Color? background,
+    Color? surfaceElevated,
+    Color? textSecondary,
+    Color? textMuted,
+    Color? confrontationBackground,
+    Color? confrontationBorder,
+    Color? confrontationText,
+    Color? disabledBackground,
+    Color? disabledForeground,
+    Color? warning,
+    Color? success,
+  }) {
+    return BiPiThemeExtension(
+      background: background ?? this.background,
+      surfaceElevated: surfaceElevated ?? this.surfaceElevated,
+      textSecondary: textSecondary ?? this.textSecondary,
+      textMuted: textMuted ?? this.textMuted,
+      confrontationBackground:
+      confrontationBackground ?? this.confrontationBackground,
+      confrontationBorder: confrontationBorder ?? this.confrontationBorder,
+      confrontationText: confrontationText ?? this.confrontationText,
+      disabledBackground: disabledBackground ?? this.disabledBackground,
+      disabledForeground: disabledForeground ?? this.disabledForeground,
+      warning: warning ?? this.warning,
+      success: success ?? this.success,
+    );
+  }
+
+  @override
+  BiPiThemeExtension lerp(
+      covariant ThemeExtension<BiPiThemeExtension>? other, double t) {
+    if (other is! BiPiThemeExtension) return this;
+    return BiPiThemeExtension(
+      background: Color.lerp(background, other.background, t)!,
+      surfaceElevated:
+      Color.lerp(surfaceElevated, other.surfaceElevated, t)!,
+      textSecondary: Color.lerp(textSecondary, other.textSecondary, t)!,
+      textMuted: Color.lerp(textMuted, other.textMuted, t)!,
+      confrontationBackground: Color.lerp(
+          confrontationBackground, other.confrontationBackground, t)!,
+      confrontationBorder:
+      Color.lerp(confrontationBorder, other.confrontationBorder, t)!,
+      confrontationText:
+      Color.lerp(confrontationText, other.confrontationText, t)!,
+      disabledBackground:
+      Color.lerp(disabledBackground, other.disabledBackground, t)!,
+      disabledForeground:
+      Color.lerp(disabledForeground, other.disabledForeground, t)!,
+      warning: Color.lerp(warning, other.warning, t)!,
+      success: Color.lerp(success, other.success, t)!,
+    );
+  }
 }
 
-/// Sistema tipográfico: Figtree es la única familia.
-/// Los pesos se limitan a 400, 500, 600 y 700.
+/// Adaptador de paleta que obtiene los colores desde `Theme.of(context)`.
+/// No almacena valores; evita duplicación.
+class AppPalette {
+  final ColorScheme _colorScheme;
+  final BiPiThemeExtension _extension;
+
+  const AppPalette._(this._colorScheme, this._extension);
+
+  static AppPalette of(BuildContext context) {
+    final theme = Theme.of(context);
+    final extension =
+        theme.extension<BiPiThemeExtension>() ?? BiPiThemeExtension.light;
+    return AppPalette._(theme.colorScheme, extension);
+  }
+
+  Color get background => _extension.background;
+  Color get surface => _colorScheme.surface;
+  Color get surfaceElevated => _extension.surfaceElevated;
+  Color get textPrimary => _colorScheme.onSurface;
+  Color get textSecondary => _extension.textSecondary;
+  Color get textMuted => _extension.textMuted;
+  Color get border => _colorScheme.outline;
+  Color get primaryAction => _colorScheme.primary;
+  Color get onPrimaryAction => _colorScheme.onPrimary;
+  Color get destructive => _colorScheme.error;
+  Color get onDestructive => _colorScheme.onError;
+  Color get disabledBackground => _extension.disabledBackground;
+  Color get disabledForeground => _extension.disabledForeground;
+  Color get confrontationBackground => _extension.confrontationBackground;
+  Color get confrontationBorder => _extension.confrontationBorder;
+  Color get confrontationText => _extension.confrontationText;
+  Color get warning => _extension.warning;
+  Color get success => _extension.success;
+}
+
+/// Sistema tipográfico centralizado.
 class AppTypography {
   AppTypography._();
 
   static TextStyle logo({required Color color, double size = 28}) =>
-      GoogleFonts.figtree(
+      GoogleFonts.radioCanadaBig(
         fontSize: size,
         fontWeight: FontWeight.w600,
         color: color,
         height: 1.0,
       );
 
+  static TextStyle screenTitle({required Color color, double size = 24}) =>
+      GoogleFonts.radioCanadaBig(
+        fontSize: size,
+        fontWeight: FontWeight.w600,
+        color: color,
+      );
+
   static TextStyle tagline({required Color color, double size = 14}) =>
-      GoogleFonts.figtree(
+      GoogleFonts.urbanist(
         fontSize: size,
         fontWeight: FontWeight.w400,
         fontStyle: FontStyle.italic,
         color: color,
       );
 
-  static TextStyle screenTitle({required Color color, double size = 24}) =>
-      GoogleFonts.figtree(
-        fontSize: size,
-        fontWeight: FontWeight.w600,
-        color: color,
-      );
-
   static TextStyle body({required Color color, double size = 15}) =>
-      GoogleFonts.figtree(
+      GoogleFonts.urbanist(
         fontSize: size,
         fontWeight: FontWeight.w400,
         color: color,
       );
 
   static TextStyle label({required Color color, double size = 13}) =>
-      GoogleFonts.figtree(
+      GoogleFonts.urbanist(
         fontSize: size,
         fontWeight: FontWeight.w500,
         color: color,
       );
 
   static TextStyle button({required Color color, double size = 16}) =>
-      GoogleFonts.figtree(
+      GoogleFonts.urbanist(
         fontSize: size,
         fontWeight: FontWeight.w600,
         color: color,
@@ -150,213 +207,327 @@ class AppTypography {
       );
 
   static TextStyle valueStrong({required Color color, double size = 26}) =>
-      GoogleFonts.figtree(
+      GoogleFonts.urbanist(
+        fontSize: size,
+        fontWeight: FontWeight.w700,
+        color: color,
+      );
+
+  static TextStyle confrontationValue({
+    required Color color,
+    double size = 26,
+  }) =>
+      GoogleFonts.radioCanadaBig(
         fontSize: size,
         fontWeight: FontWeight.w700,
         color: color,
       );
 }
 
-/// Construye ThemeData para modo claro sin usar ColorScheme.fromSeed,
-/// para evitar colores generados que rompan la paleta.
+/// Tema claro completo.
 ThemeData buildLightTheme() {
-  final base = ThemeData.light(useMaterial3: true);
-  final colorScheme = ColorScheme(
+  const colorScheme = ColorScheme(
     brightness: Brightness.light,
-    primary: AppPalette.light.primaryAction,
-    onPrimary: AppPalette.light.onPrimaryAction,
-    secondary: AppPalette.light.surfaceElevated,
-    onSecondary: AppPalette.light.textPrimary,
-    error: AppPalette.light.destructive,
+    primary: Color(0xFFF1C376),
+    onPrimary: Color(0xFF263229),
+    secondary: Color(0xFFFFF4F4),
+    onSecondary: Color(0xFF263229),
+    error: Color(0xFFA63D40),
     onError: Colors.white,
-    surface: AppPalette.light.surface,
-    onSurface: AppPalette.light.textPrimary,
-    outline: AppPalette.light.border,
+    surface: Colors.white,
+    onSurface: Color(0xFF263229),
+    outline: Color(0xFFDCCFBA),
     shadow: Colors.black26,
   );
 
-  return base.copyWith(
-    textTheme: GoogleFonts.figtreeTextTheme(base.textTheme),
+  final base = ThemeData(
+    useMaterial3: true,
+    brightness: Brightness.light,
     colorScheme: colorScheme,
-    scaffoldBackgroundColor: AppPalette.light.background,
+    textTheme: GoogleFonts.urbanistTextTheme(),
+  );
+
+  return base.copyWith(
+    scaffoldBackgroundColor: BiPiThemeExtension.light.background,
     appBarTheme: AppBarTheme(
-      backgroundColor: AppPalette.light.background,
-      foregroundColor: AppPalette.light.textPrimary,
+      backgroundColor: BiPiThemeExtension.light.background,
+      foregroundColor: colorScheme.onSurface,
       elevation: 0,
-      titleTextStyle: AppTypography.screenTitle(color: AppPalette.light.textPrimary),
+      titleTextStyle: AppTypography.screenTitle(color: colorScheme.onSurface),
     ),
     snackBarTheme: SnackBarThemeData(
-      backgroundColor: AppColors.deepBlue,
-      contentTextStyle: AppTypography.body(color: AppPalette.light.surface),
-      actionTextColor: AppColors.amber,
+      backgroundColor: colorScheme.onSurface,
+      contentTextStyle: AppTypography.body(color: colorScheme.surface),
+      actionTextColor: colorScheme.primary,
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: AppPalette.light.surface,
-      labelStyle: AppTypography.label(color: AppPalette.light.textMuted),
+      fillColor: colorScheme.surface,
+      labelStyle: AppTypography.label(color: BiPiThemeExtension.light.textMuted),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: AppPalette.light.border),
+        borderSide: BorderSide(color: colorScheme.outline),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: AppPalette.light.textPrimary, width: 1.4),
+        borderSide: BorderSide(color: colorScheme.onSurface, width: 1.4),
       ),
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        backgroundColor: AppPalette.light.primaryAction,
-        foregroundColor: AppPalette.light.onPrimaryAction,
-        textStyle: AppTypography.button(color: AppPalette.light.onPrimaryAction),
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
+        textStyle: AppTypography.button(color: colorScheme.onPrimary),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
         ),
+        minimumSize: const Size(44, 44),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        foregroundColor: AppPalette.light.textPrimary,
-        side: BorderSide(color: AppPalette.light.border),
-        textStyle: AppTypography.button(color: AppPalette.light.textPrimary),
+        foregroundColor: colorScheme.onSurface,
+        side: BorderSide(color: colorScheme.outline),
+        textStyle: AppTypography.button(color: colorScheme.onSurface),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
         ),
+        minimumSize: const Size(44, 44),
       ),
     ),
     floatingActionButtonTheme: FloatingActionButtonThemeData(
-      backgroundColor: AppPalette.light.primaryAction,
-      foregroundColor: AppPalette.light.onPrimaryAction,
+      backgroundColor: colorScheme.primary,
+      foregroundColor: colorScheme.onPrimary,
     ),
     chipTheme: base.chipTheme.copyWith(
-      backgroundColor: AppPalette.light.surface,
-      selectedColor: AppPalette.light.primaryAction,
-      labelStyle: AppTypography.label(color: AppPalette.light.textPrimary),
-      secondaryLabelStyle: AppTypography.label(color: AppPalette.light.onPrimaryAction),
-      side: BorderSide(color: AppPalette.light.border),
+      backgroundColor: colorScheme.surface,
+      selectedColor: colorScheme.primary,
+      labelStyle: AppTypography.label(color: colorScheme.onSurface),
+      secondaryLabelStyle: AppTypography.label(color: colorScheme.onPrimary),
+      side: BorderSide(color: colorScheme.outline),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
     ),
     bottomSheetTheme: BottomSheetThemeData(
-      backgroundColor: AppPalette.light.surface,
-      modalBackgroundColor: AppPalette.light.surface,
-      shape: RoundedRectangleBorder(
+      backgroundColor: colorScheme.surface,
+      modalBackgroundColor: colorScheme.surface,
+      shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
     ),
     dialogTheme: DialogThemeData(
-      backgroundColor: AppPalette.light.surface,
-      titleTextStyle: AppTypography.screenTitle(color: AppPalette.light.textPrimary),
-      contentTextStyle: AppTypography.body(color: AppPalette.light.textPrimary),
+      backgroundColor: colorScheme.surface,
+      titleTextStyle: AppTypography.screenTitle(color: colorScheme.onSurface),
+      contentTextStyle: AppTypography.body(color: colorScheme.onSurface),
     ),
     datePickerTheme: DatePickerThemeData(
-      backgroundColor: AppPalette.light.surface,
-      headerBackgroundColor: AppPalette.light.surfaceElevated,
-      headerForegroundColor: AppPalette.light.textPrimary,
+      backgroundColor: colorScheme.surface,
+      headerBackgroundColor: BiPiThemeExtension.light.surfaceElevated,
+      headerForegroundColor: colorScheme.onSurface,
     ),
+    timePickerTheme: TimePickerThemeData(
+      backgroundColor: colorScheme.surface,
+      helpTextStyle: AppTypography.label(
+        color: colorScheme.onSurface,
+        size: 13,
+      ),
+      hourMinuteColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+            ? colorScheme.primary
+            : BiPiThemeExtension.light.surfaceElevated,
+      ),
+      hourMinuteTextColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+            ? colorScheme.onPrimary
+            : colorScheme.onSurface,
+      ),
+      dialBackgroundColor: BiPiThemeExtension.light.surfaceElevated,
+      dialHandColor: colorScheme.primary,
+      dialTextColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+            ? colorScheme.onPrimary
+            : colorScheme.onSurface,
+      ),
+      dayPeriodColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+            ? colorScheme.primary
+            : colorScheme.surface,
+      ),
+      dayPeriodTextColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+            ? colorScheme.onPrimary
+            : colorScheme.onSurface,
+      ),
+      dayPeriodBorderSide: BorderSide(
+        color: colorScheme.outline,
+      ),
+      entryModeIconColor: colorScheme.onSurface,
+    ),
+    checkboxTheme: CheckboxThemeData(
+      fillColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+            ? colorScheme.primary
+            : null,
+      ),
+    ),
+    iconTheme: IconThemeData(color: colorScheme.onSurface),
+    extensions: const [BiPiThemeExtension.light],
   );
 }
 
+/// Tema oscuro completo.
 ThemeData buildDarkTheme() {
-  final base = ThemeData.dark(useMaterial3: true);
-  final colorScheme = ColorScheme(
+  const colorScheme = ColorScheme(
     brightness: Brightness.dark,
-    primary: AppPalette.dark.primaryAction,
-    onPrimary: AppPalette.dark.onPrimaryAction,
-    secondary: AppPalette.dark.surfaceElevated,
-    onSecondary: AppPalette.dark.textPrimary,
-    error: AppPalette.dark.destructive,
-    onError: Colors.black,
-    surface: AppPalette.dark.surface,
-    onSurface: AppPalette.dark.textPrimary,
-    outline: AppPalette.dark.border,
+    primary: Color(0xFFF1C376),
+    onPrimary: Color(0xFF263229),
+    secondary: Color(0xFF303A32),
+    onSecondary: Color(0xFFFFF4F4),
+    error: Color(0xFFFFB4AB),
+    onError: Color(0xFF4A090E),
+    surface: Color(0xFF273029),
+    onSurface: Color(0xFFFFF4F4),
+    outline: Color(0xFF4C5A4E),
     shadow: Colors.black,
   );
 
-  return base.copyWith(
-    textTheme: GoogleFonts.figtreeTextTheme(base.textTheme),
+  final base = ThemeData(
+    useMaterial3: true,
+    brightness: Brightness.dark,
     colorScheme: colorScheme,
-    scaffoldBackgroundColor: AppPalette.dark.background,
+    textTheme: GoogleFonts.urbanistTextTheme(),
+  );
+
+  return base.copyWith(
+    scaffoldBackgroundColor: BiPiThemeExtension.dark.background,
     appBarTheme: AppBarTheme(
-      backgroundColor: AppPalette.dark.background,
-      foregroundColor: AppPalette.dark.textPrimary,
+      backgroundColor: BiPiThemeExtension.dark.background,
+      foregroundColor: colorScheme.onSurface,
       elevation: 0,
-      titleTextStyle: AppTypography.screenTitle(color: AppPalette.dark.textPrimary),
+      titleTextStyle: AppTypography.screenTitle(color: colorScheme.onSurface),
     ),
     snackBarTheme: SnackBarThemeData(
-      backgroundColor: AppColors.amber,
-      contentTextStyle: AppTypography.body(
-        color: AppColors.deepBlue,
-      ),
-      actionTextColor: AppColors.deepBlue,
+      backgroundColor: colorScheme.primary,
+      contentTextStyle: AppTypography.body(color: colorScheme.onPrimary),
+      actionTextColor: colorScheme.onPrimary,
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: AppPalette.dark.surface,
-      labelStyle: AppTypography.label(color: AppPalette.dark.textMuted),
+      fillColor: colorScheme.surface,
+      labelStyle: AppTypography.label(color: BiPiThemeExtension.dark.textMuted),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: AppPalette.dark.border),
+        borderSide: BorderSide(color: colorScheme.outline),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: AppPalette.dark.textPrimary, width: 1.4),
+        borderSide: BorderSide(color: colorScheme.onSurface, width: 1.4),
       ),
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        backgroundColor: AppPalette.dark.primaryAction,
-        foregroundColor: AppPalette.dark.onPrimaryAction,
-        textStyle: AppTypography.button(color: AppPalette.dark.onPrimaryAction),
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
+        textStyle: AppTypography.button(color: colorScheme.onPrimary),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
         ),
+        minimumSize: const Size(44, 44),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        foregroundColor: AppPalette.dark.textPrimary,
-        side: BorderSide(color: AppPalette.dark.border),
-        textStyle: AppTypography.button(color: AppPalette.dark.textPrimary),
+        foregroundColor: colorScheme.onSurface,
+        side: BorderSide(color: colorScheme.outline),
+        textStyle: AppTypography.button(color: colorScheme.onSurface),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
         ),
+        minimumSize: const Size(44, 44),
       ),
     ),
     floatingActionButtonTheme: FloatingActionButtonThemeData(
-      backgroundColor: AppPalette.dark.primaryAction,
-      foregroundColor: AppPalette.dark.onPrimaryAction,
+      backgroundColor: colorScheme.primary,
+      foregroundColor: colorScheme.onPrimary,
     ),
     chipTheme: base.chipTheme.copyWith(
-      backgroundColor: AppPalette.dark.surface,
-      selectedColor: AppPalette.dark.primaryAction,
-      labelStyle: AppTypography.label(color: AppPalette.dark.textPrimary),
-      secondaryLabelStyle: AppTypography.label(color: AppPalette.dark.onPrimaryAction),
-      side: BorderSide(color: AppPalette.dark.border),
+      backgroundColor: colorScheme.surface,
+      selectedColor: colorScheme.primary,
+      labelStyle: AppTypography.label(color: colorScheme.onSurface),
+      secondaryLabelStyle: AppTypography.label(color: colorScheme.onPrimary),
+      side: BorderSide(color: colorScheme.outline),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
     ),
     bottomSheetTheme: BottomSheetThemeData(
-      backgroundColor: AppPalette.dark.surface,
-      modalBackgroundColor: AppPalette.dark.surface,
-      shape: RoundedRectangleBorder(
+      backgroundColor: colorScheme.surface,
+      modalBackgroundColor: colorScheme.surface,
+      shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
     ),
     dialogTheme: DialogThemeData(
-      backgroundColor: AppPalette.dark.surface,
-      titleTextStyle: AppTypography.screenTitle(color: AppPalette.dark.textPrimary),
-      contentTextStyle: AppTypography.body(color: AppPalette.dark.textPrimary),
+      backgroundColor: colorScheme.surface,
+      titleTextStyle: AppTypography.screenTitle(color: colorScheme.onSurface),
+      contentTextStyle: AppTypography.body(color: colorScheme.onSurface),
     ),
     datePickerTheme: DatePickerThemeData(
-      backgroundColor: AppPalette.dark.surface,
-      headerBackgroundColor: AppPalette.dark.surfaceElevated,
-      headerForegroundColor: AppPalette.dark.textPrimary,
+      backgroundColor: colorScheme.surface,
+      headerBackgroundColor: BiPiThemeExtension.dark.surfaceElevated,
+      headerForegroundColor: colorScheme.onSurface,
     ),
+    timePickerTheme: TimePickerThemeData(
+      backgroundColor: colorScheme.surface,
+      helpTextStyle: AppTypography.label(
+        color: colorScheme.onSurface,
+        size: 13,
+      ),
+      hourMinuteColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+            ? colorScheme.primary
+            : BiPiThemeExtension.dark.surfaceElevated,
+      ),
+      hourMinuteTextColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+            ? colorScheme.onPrimary
+            : colorScheme.onSurface,
+      ),
+      dialBackgroundColor: BiPiThemeExtension.dark.surfaceElevated,
+      dialHandColor: colorScheme.primary,
+      dialTextColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+            ? colorScheme.onPrimary
+            : colorScheme.onSurface,
+      ),
+      dayPeriodColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+            ? colorScheme.primary
+            : colorScheme.surface,
+      ),
+      dayPeriodTextColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+            ? colorScheme.onPrimary
+            : colorScheme.onSurface,
+      ),
+      dayPeriodBorderSide: BorderSide(
+        color: colorScheme.outline,
+      ),
+      entryModeIconColor: colorScheme.onSurface,
+    ),
+    checkboxTheme: CheckboxThemeData(
+      fillColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+            ? colorScheme.primary
+            : null,
+      ),
+    ),
+    iconTheme: IconThemeData(color: colorScheme.onSurface),
+    extensions: const [BiPiThemeExtension.dark],
   );
 }

@@ -5,9 +5,6 @@ import 'ResponsibilityService.dart';
 import 'VerificationNotificationService.dart';
 import 'AppColors.dart';
 
-/// Predicción de inicio: opciones simples, tal como se definió en la spec.
-/// "Todavía no lo sé" deja predictedStartAt = null explícitamente, nunca
-/// se asume "hoy" por defecto.
 enum _StartGuess { today, tomorrow, pickDate, unknown }
 
 class CaptureResponsibilityScreen extends StatefulWidget {
@@ -45,7 +42,7 @@ class _CaptureResponsibilityScreenState
     switch (_startGuess) {
       case _StartGuess.today:
         final now = DateTime.now();
-        return DateTime(now.year, now.month, now.day, 19); // 7pm por defecto
+        return DateTime(now.year, now.month, now.day, 19);
       case _StartGuess.tomorrow:
         final tomorrow = DateTime.now().add(const Duration(days: 1));
         return DateTime(
@@ -70,7 +67,7 @@ class _CaptureResponsibilityScreenState
       context: context,
       initialTime: TimeOfDay.fromDateTime(_dueAt),
     );
-    if (time == null) return;
+    if (time == null || !mounted) return;
     setState(() {
       _dueAt = DateTime(date.year, date.month, date.day, time.hour, time.minute);
     });
@@ -88,7 +85,7 @@ class _CaptureResponsibilityScreenState
       context: context,
       initialTime: TimeOfDay.now(),
     );
-    if (time == null) return;
+    if (time == null || !mounted) return;
     setState(() {
       _customStartDate =
           DateTime(date.year, date.month, date.day, time.hour, time.minute);
@@ -145,9 +142,12 @@ class _CaptureResponsibilityScreenState
 
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
+      debugPrint('Capture save error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo guardar: $e')),
+          const SnackBar(
+            content: Text('No se pudo guardar la responsabilidad.'),
+          ),
         );
       }
     } finally {
@@ -177,7 +177,10 @@ class _CaptureResponsibilityScreenState
       appBar: AppBar(
         title: Text(
           'Nueva responsabilidad',
-          style: AppTypography.screenTitle(color: palette.textPrimary, size: 20),
+          style: AppTypography.screenTitle(
+            color: palette.textPrimary,
+            size: 20,
+          ),
         ),
       ),
       body: SingleChildScrollView(
@@ -185,17 +188,11 @@ class _CaptureResponsibilityScreenState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // --- Tipo ---
-            Text(
-              'Tipo',
-              style: AppTypography.label(
-                color: palette.textPrimary,
-                size: 15,
-              ).copyWith(fontWeight: FontWeight.w600),
-            ),
+            _buildSectionTitle('¿Qué te dejaron?', palette),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
+              runSpacing: 8,
               children: ResponsibilityType.values.map((t) {
                 return _buildChoiceChip(
                   label: _typeLabel(t),
@@ -204,9 +201,9 @@ class _CaptureResponsibilityScreenState
                 );
               }).toList(),
             ),
-            const SizedBox(height: 20),
-
-            // --- Materia / descripción ---
+            const SizedBox(height: 32),
+            _buildSectionTitle('Contexto', palette),
+            const SizedBox(height: 16),
             _buildTextField(
               controller: _subjectController,
               label: 'Materia (opcional)',
@@ -219,9 +216,7 @@ class _CaptureResponsibilityScreenState
               maxLines: 2,
               palette: palette,
             ),
-            const SizedBox(height: 20),
-
-            // --- Fecha de entrega ---
+            const SizedBox(height: 16),
             Text(
               'Entrega',
               style: AppTypography.label(
@@ -246,17 +241,17 @@ class _CaptureResponsibilityScreenState
                 style: AppTypography.body(color: palette.textPrimary),
               ),
             ),
-            const SizedBox(height: 20),
-
-            // --- Predicción de inicio ---
+            const SizedBox(height: 32),
+            _buildSectionTitle('¿Cuándo crees que empezarás?', palette),
+            const SizedBox(height: 4),
             Text(
-              '¿Cuándo crees que empezarás?',
-              style: AppTypography.label(
-                color: palette.textPrimary,
-                size: 15,
-              ).copyWith(fontWeight: FontWeight.w600),
+              'No cuándo deberías. Cuándo crees que realmente lo harás.',
+              style: AppTypography.body(
+                color: palette.textSecondary,
+                size: 14,
+              ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -289,7 +284,6 @@ class _CaptureResponsibilityScreenState
               ],
             ),
             const SizedBox(height: 32),
-
             _isSaving
                 ? Center(
               child: CircularProgressIndicator(
@@ -299,16 +293,20 @@ class _CaptureResponsibilityScreenState
                 : ElevatedButton(
               onPressed: _startGuess == null ? null : _save,
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.amber,
-                foregroundColor: AppColors.deepBlue,
+                backgroundColor: palette.primaryAction,
+                foregroundColor: palette.onPrimaryAction,
                 disabledBackgroundColor: palette.disabledBackground,
                 disabledForegroundColor: palette.disabledForeground,
-                minimumSize: const Size(double.infinity, 50),
+                minimumSize: const Size(double.infinity, 52),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
               ),
               child: Text(
-                'Guardar',
+                'REGISTRAR RESPONSABILIDAD',
                 style: AppTypography.button(
-                  color: AppColors.deepBlue,
+                  color: palette.onPrimaryAction,
                   size: 16,
                 ),
               ),
@@ -316,6 +314,16 @@ class _CaptureResponsibilityScreenState
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title, AppPalette palette) {
+    return Text(
+      title,
+      style: AppTypography.label(
+        color: palette.textPrimary,
+        size: 18,
+      ).copyWith(fontWeight: FontWeight.w600),
     );
   }
 

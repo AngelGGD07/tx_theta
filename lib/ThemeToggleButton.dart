@@ -18,9 +18,11 @@ class ThemeToggleButton extends StatelessWidget {
         isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
         color: palette.textPrimary,
       ),
+      constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+      padding: EdgeInsets.zero,
       onPressed: () {
-        themeModeNotifier.value =
-        isDark ? ThemeMode.light : ThemeMode.dark;
+        final newMode = isDark ? ThemeMode.light : ThemeMode.dark;
+        ThemeModeController.setThemeMode(newMode);
       },
     );
   }
