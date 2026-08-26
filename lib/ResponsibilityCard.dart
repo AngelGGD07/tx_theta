@@ -398,6 +398,7 @@ Future<void> showPastStartSelector(
   );
 
   if (choice == null) return;
+  if (!context.mounted) return;
 
   DateTime? finalDate;
 

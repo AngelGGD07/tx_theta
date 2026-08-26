@@ -330,8 +330,41 @@ ThemeData buildLightTheme() {
     ),
     timePickerTheme: TimePickerThemeData(
       backgroundColor: colorScheme.surface,
-      hourMinuteTextColor: colorScheme.onSurface,
+      helpTextStyle: AppTypography.label(
+        color: colorScheme.onSurface,
+        size: 13,
+      ),
+      hourMinuteColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+            ? colorScheme.primary
+            : BiPiThemeExtension.light.surfaceElevated,
+      ),
+      hourMinuteTextColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+            ? colorScheme.onPrimary
+            : colorScheme.onSurface,
+      ),
+      dialBackgroundColor: BiPiThemeExtension.light.surfaceElevated,
       dialHandColor: colorScheme.primary,
+      dialTextColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+            ? colorScheme.onPrimary
+            : colorScheme.onSurface,
+      ),
+      dayPeriodColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+            ? colorScheme.primary
+            : colorScheme.surface,
+      ),
+      dayPeriodTextColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+            ? colorScheme.onPrimary
+            : colorScheme.onSurface,
+      ),
+      dayPeriodBorderSide: BorderSide(
+        color: colorScheme.outline,
+      ),
+      entryModeIconColor: colorScheme.onSurface,
     ),
     checkboxTheme: CheckboxThemeData(
       fillColor: WidgetStateProperty.resolveWith(
@@ -451,8 +484,41 @@ ThemeData buildDarkTheme() {
     ),
     timePickerTheme: TimePickerThemeData(
       backgroundColor: colorScheme.surface,
-      hourMinuteTextColor: colorScheme.onSurface,
+      helpTextStyle: AppTypography.label(
+        color: colorScheme.onSurface,
+        size: 13,
+      ),
+      hourMinuteColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+            ? colorScheme.primary
+            : BiPiThemeExtension.dark.surfaceElevated,
+      ),
+      hourMinuteTextColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+            ? colorScheme.onPrimary
+            : colorScheme.onSurface,
+      ),
+      dialBackgroundColor: BiPiThemeExtension.dark.surfaceElevated,
       dialHandColor: colorScheme.primary,
+      dialTextColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+            ? colorScheme.onPrimary
+            : colorScheme.onSurface,
+      ),
+      dayPeriodColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+            ? colorScheme.primary
+            : colorScheme.surface,
+      ),
+      dayPeriodTextColor: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+            ? colorScheme.onPrimary
+            : colorScheme.onSurface,
+      ),
+      dayPeriodBorderSide: BorderSide(
+        color: colorScheme.outline,
+      ),
+      entryModeIconColor: colorScheme.onSurface,
     ),
     checkboxTheme: CheckboxThemeData(
       fillColor: WidgetStateProperty.resolveWith(
