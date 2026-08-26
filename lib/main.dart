@@ -16,7 +16,6 @@ import 'ConsentScreen.dart';
 import 'ConsentService.dart';
 import 'ThemeModeController.dart';
 
-// 1. LA LLAVE MÁGICA: Controla los mensajes en pantalla (SnackBar) desde CUALQUIER archivo
 final rootScaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
 class PendingNotificationAction {
@@ -29,7 +28,8 @@ class PendingNotificationAction {
   });
 }
 
-final pendingNotificationAction = ValueNotifier<PendingNotificationAction?>(null);
+final pendingNotificationAction =
+ValueNotifier<PendingNotificationAction?>(null);
 
 final _notificationService = VerificationNotificationService();
 final _responsibilityService = ResponsibilityService();
@@ -37,6 +37,8 @@ final _analytics = AnalyticsService();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await ThemeModeController.load();
 
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
@@ -50,9 +52,7 @@ Future<void> main() async {
 }
 
 Future<void> _handleNotificationAction(
-    String responsibilityId,
-    String actionId,
-    ) async {
+    String responsibilityId, String actionId) async {
   if (responsibilityId.isEmpty) return;
 
   await _responsibilityService.logNotificationEvent(
@@ -71,7 +71,6 @@ Future<void> _handleNotificationAction(
 
   switch (actionId) {
     case VerificationAction.starting:
-    // CASO A: Acción directa ("Estoy empezando"). Se salta el menú.
       await _responsibilityService.markStartedIfNotAlready(
         responsibilityId: responsibilityId,
         actualStartAt: DateTime.now(),
@@ -82,7 +81,6 @@ Future<void> _handleNotificationAction(
 
     case VerificationAction.alreadyStarted:
     case VerificationAction.notYet:
-    // CASO B: Requiere menú ("Ya había empezado"). Pasa a HomeScreen.
       pendingNotificationAction.value = PendingNotificationAction(
         actionId: actionId,
         responsibilityId: responsibilityId,
@@ -91,7 +89,6 @@ Future<void> _handleNotificationAction(
   }
 }
 
-// 2. LA FUNCIÓN QUE LANZA EL DESHACER BLINDADO
 void _showGlobalUndo(String responsibilityId) {
   WidgetsBinding.instance.addPostFrameCallback((_) {
     rootScaffoldMessengerKey.currentState?.hideCurrentSnackBar();
@@ -118,7 +115,6 @@ class MyApp extends StatelessWidget {
       valueListenable: themeModeNotifier,
       builder: (context, themeMode, _) {
         return MaterialApp(
-          // 3. CONECTAMOS LA LLAVE A LA RAÍZ DE LA APP
           scaffoldMessengerKey: rootScaffoldMessengerKey,
           title: 'BiPi',
           theme: buildLightTheme(),
@@ -234,8 +230,8 @@ class _ConsentError extends StatelessWidget {
                   icon: const Icon(Icons.refresh),
                   label: const Text('Reintentar'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.amber,
-                    foregroundColor: AppColors.deepBlue,
+                    backgroundColor: palette.primaryAction,
+                    foregroundColor: palette.onPrimaryAction,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 20,
                       vertical: 12,

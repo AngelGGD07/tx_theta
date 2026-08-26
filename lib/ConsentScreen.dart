@@ -39,7 +39,6 @@ class _ConsentScreenState extends State<ConsentScreen> {
 
     try {
       await _consentService.acceptConsent(userId: user.uid);
-      // La actualización del stream en _AuthGate hará que se muestre Home.
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -58,7 +57,6 @@ class _ConsentScreenState extends State<ConsentScreen> {
 
     try {
       await FirebaseAuth.instance.signOut();
-      // _AuthGate reaccionará a authStateChanges y mostrará Login.
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -179,8 +177,8 @@ class _ConsentScreenState extends State<ConsentScreen> {
                           ? null
                           : (value) =>
                           setState(() => _accepted = value ?? false),
-                      activeColor: AppColors.amber,
-                      checkColor: AppColors.deepBlue,
+                      activeColor: palette.primaryAction,
+                      checkColor: palette.onPrimaryAction,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -220,8 +218,8 @@ class _ConsentScreenState extends State<ConsentScreen> {
                     ? _accept
                     : null,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.amber,
-                  foregroundColor: AppColors.deepBlue,
+                  backgroundColor: palette.primaryAction,
+                  foregroundColor: palette.onPrimaryAction,
                   disabledBackgroundColor: palette.disabledBackground,
                   disabledForegroundColor: palette.disabledForeground,
                   minimumSize: const Size(double.infinity, 52),
@@ -242,9 +240,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
                     : Text(
                   'ACEPTO PARTICIPAR',
                   style: AppTypography.button(
-                    color: AppColors.deepBlue,
-                    size: 16,
-                  ),
+                      color: palette.onPrimaryAction, size: 16),
                 ),
               ),
               const SizedBox(height: 12),
@@ -272,9 +268,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
                     : Text(
                   'NO PARTICIPAR',
                   style: AppTypography.button(
-                    color: palette.textPrimary,
-                    size: 14,
-                  ),
+                      color: palette.textPrimary, size: 14),
                 ),
               ),
               const SizedBox(height: 16),

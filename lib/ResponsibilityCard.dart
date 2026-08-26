@@ -5,8 +5,6 @@ import 'ResponsibilityService.dart';
 import 'main.dart';
 import 'AppColors.dart';
 
-// Set global en memoria para deduplicar la exposición de la confrontación
-// durante el ciclo de vida de la aplicación.
 final Set<String> _loggedConfrontations = {};
 
 class ResponsibilityCard extends StatefulWidget {
@@ -26,33 +24,62 @@ class ResponsibilityCard extends StatefulWidget {
 class _ResponsibilityCardState extends State<ResponsibilityCard> {
   final _analytics = AnalyticsService();
 
+  bool _isMarkingStarted = false;
+
   @override
   void dispose() {
     super.dispose();
   }
 
   Future<void> _markStarted() async {
-    await widget.service.markStarted(
-      responsibilityId: widget.responsibility.id,
-      actualStartAt: DateTime.now(),
-      source: StartSource.manualLive,
-    );
+    if (_isMarkingStarted) return;
 
-    if (!mounted) return;
+    setState(() {
+      _isMarkingStarted = true;
+    });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Inicio registrado'),
-        duration: const Duration(seconds: 6),
-        persist: false,
-        action: SnackBarAction(
-          label: 'DESHACER',
-          onPressed: () async {
-            await widget.service.undoStart(widget.responsibility.id);
-          },
+    try {
+      await widget.service.markStarted(
+        responsibilityId: widget.responsibility.id,
+        actualStartAt: DateTime.now(),
+        source: StartSource.manualLive,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Inicio registrado'),
+          duration: const Duration(seconds: 6),
+          persist: false,
+          action: SnackBarAction(
+            label: 'DESHACER',
+            onPressed: () async {
+              await widget.service.undoStart(widget.responsibility.id);
+            },
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      debugPrint('Error al registrar inicio: $e');
+      if (!mounted) return;
+      final palette = AppPalette.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'No se pudo registrar el inicio. Inténtalo nuevamente.',
+            style: AppTypography.body(color: palette.onDestructive),
+          ),
+          backgroundColor: palette.destructive,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isMarkingStarted = false;
+        });
+      }
+    }
   }
 
   Future<void> _markStartedInThePast() async {
@@ -137,12 +164,23 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
                 children: [
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: _markStarted,
+                      onPressed: _isMarkingStarted ? null : _markStarted,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.amber,
-                        foregroundColor: AppColors.deepBlue,
+                        backgroundColor: palette.primaryAction,
+                        foregroundColor: palette.onPrimaryAction,
+                        disabledBackgroundColor: palette.disabledBackground,
+                        disabledForegroundColor: palette.disabledForeground,
                       ),
-                      child: const Text('Empecé a trabajar en esto'),
+                      child: _isMarkingStarted
+                          ? SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: palette.onPrimaryAction,
+                        ),
+                      )
+                          : const Text('Empecé a trabajar en esto'),
                     ),
                   ),
                   IconButton(
@@ -169,44 +207,36 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: palette.confrontationBorder),
         ),
-        child: Text(
-          'Empezaste ${_relativeDay(r.startedAt!)}.',
-          style: AppTypography.body(
-            color: palette.confrontationText,
-          ).copyWith(fontStyle: FontStyle.italic),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _confrontationLabel('COMENZASTE', palette),
+            const SizedBox(height: 4),
+            _confrontationDate(_formatDateTime(r.startedAt!), palette),
+          ],
         ),
       );
     }
+
     final deviationHours = r.startDeviationHours!;
     final absHours = deviationHours.abs();
     final late = deviationHours > 0;
 
-    String message;
+    String resultText;
     if (absHours < 1) {
-      message = r.isHighQualityStart
-          ? 'Empezaste prácticamente cuando lo habías previsto.'
-          : 'Según la fecha que recordaste, empezaste aproximadamente cuando lo habías previsto.';
+      resultText = 'Prácticamente a la hora prevista';
     } else if (absHours < 24) {
       final h = absHours.round();
       final unit = h == 1 ? 'hora' : 'horas';
-      message = r.isHighQualityStart
-          ? (late
-          ? 'Comenzaste $h $unit después de lo previsto.'
-          : 'Comenzaste $h $unit antes de lo previsto.')
-          : (late
-          ? 'Según la fecha que recordaste, comenzaste aproximadamente $h $unit después de lo previsto.'
-          : 'Según la fecha que recordaste, comenzaste aproximadamente $h $unit antes de lo previsto.');
+      resultText = late ? '$h $unit después' : '$h $unit antes';
     } else {
       final d = (absHours / 24).round();
       final unit = d == 1 ? 'día' : 'días';
-      message = r.isHighQualityStart
-          ? (late
-          ? 'Comenzaste $d $unit después de lo previsto.'
-          : 'Comenzaste $d $unit antes de lo previsto.')
-          : (late
-          ? 'Según la fecha que recordaste, comenzaste aproximadamente $d $unit después de lo previsto.'
-          : 'Según la fecha que recordaste, comenzaste aproximadamente $d $unit antes de lo previsto.');
+      resultText = late ? '$d $unit después' : '$d $unit antes';
     }
+
+    final isRetrospective = r.startSource == StartSource.manualRecalled ||
+        r.startSource == StartSource.reminderRecalled;
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -215,13 +245,76 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: palette.confrontationBorder),
       ),
-      child: Text(
-        message,
-        style: AppTypography.body(
-          color: palette.confrontationText,
-        ).copyWith(fontStyle: FontStyle.italic),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _confrontationLabel('PENSABAS COMENZAR', palette),
+          const SizedBox(height: 4),
+          _confrontationDate(
+            _formatDateTime(r.predictedStartAt!),
+            palette,
+          ),
+          const SizedBox(height: 12),
+          _confrontationLabel('COMENZASTE', palette),
+          const SizedBox(height: 4),
+          _confrontationDate(
+            _formatDateTime(r.startedAt!),
+            palette,
+          ),
+          if (isRetrospective) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Según la fecha que recordaste',
+              style: AppTypography.body(
+                color: palette.textSecondary,
+                size: 12,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Text(
+            resultText.toUpperCase(),
+            style: AppTypography.confrontationValue(
+              color: palette.confrontationText,
+              size: 22,
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  Widget _confrontationLabel(String text, AppPalette palette) {
+    return Text(
+      text,
+      style: AppTypography.label(
+        color: palette.textSecondary,
+        size: 13,
+      ).copyWith(fontWeight: FontWeight.w500),
+    );
+  }
+
+  Widget _confrontationDate(String text, AppPalette palette) {
+    return Text(
+      text,
+      style: AppTypography.body(
+        color: palette.confrontationText,
+        size: 16,
+      ).copyWith(fontWeight: FontWeight.w600),
+    );
+  }
+
+  String _formatDateTime(DateTime dt) {
+    final months = [
+      'ene', 'feb', 'mar', 'abr', 'may', 'jun',
+      'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
+    ];
+    final hour = dt.hour == 0
+        ? 12
+        : (dt.hour > 12 ? dt.hour - 12 : dt.hour);
+    final period = dt.hour >= 12 ? 'p.m.' : 'a.m.';
+    final minute = dt.minute.toString().padLeft(2, '0');
+    return '${dt.day} ${months[dt.month - 1]}, $hour:$minute $period';
   }
 
   String _typeLabel(ResponsibilityType t) {
@@ -266,7 +359,6 @@ Future<void> showPastStartSelector(
   final palette = AppPalette.of(context);
   final now = DateTime.now();
 
-  // 1. Esperamos la decisión del modal.
   final choice = await showModalBottomSheet<dynamic>(
     context: context,
     backgroundColor: palette.surface,
@@ -298,7 +390,7 @@ Future<void> showPastStartSelector(
               'Elegir fecha y hora',
               style: AppTypography.body(color: palette.textPrimary),
             ),
-            onTap: () => Navigator.pop(ctx, 'custom'), // Retornamos un flag
+            onTap: () => Navigator.pop(ctx, 'custom'),
           ),
         ],
       ),
@@ -309,7 +401,6 @@ Future<void> showPastStartSelector(
 
   DateTime? finalDate;
 
-  // 2. Procesamos la decisión de forma lineal.
   if (choice is DateTime) {
     finalDate = choice;
   } else if (choice == 'custom') {
@@ -325,12 +416,11 @@ Future<void> showPastStartSelector(
       context: context,
       initialTime: TimeOfDay.now(),
     );
-    if (time == null) return;
+    if (time == null || !context.mounted) return;
 
     finalDate =
         DateTime(date.year, date.month, date.day, time.hour, time.minute);
 
-    // --- BLOQUEO B4: IMPEDIR HORAS FUTURAS ---
     if (finalDate.isAfter(DateTime.now())) {
       rootScaffoldMessengerKey.currentState
         ?..hideCurrentSnackBar()
@@ -343,7 +433,6 @@ Future<void> showPastStartSelector(
     }
   }
 
-  // 3. Guardamos en base de datos y usamos la LLAVE GLOBAL blindada
   if (finalDate != null) {
     await service.markStarted(
       responsibilityId: responsibilityId,

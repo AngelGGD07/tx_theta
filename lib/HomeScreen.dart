@@ -6,7 +6,7 @@ import 'Responsibility.dart';
 import 'ResponsibilityCard.dart';
 import 'ResponsibilityService.dart';
 import 'VerificationNotificationService.dart';
-import 'main.dart'; // Contiene rootScaffoldMessengerKey y pendingNotificationAction
+import 'main.dart';
 import 'AppColors.dart';
 import 'ThemeToggleButton.dart';
 
@@ -65,8 +65,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _processPendingAction(
-      PendingNotificationAction action,
-      ) async {
+      PendingNotificationAction action) async {
     try {
       if (action.actionId == VerificationAction.alreadyStarted) {
         await _processAlreadyStarted(action);
@@ -77,7 +76,6 @@ class _HomeScreenState extends State<HomeScreen> {
         await _processNotYet(action);
       }
     } catch (error) {
-      // USAMOS LA LLAVE GLOBAL PARA GARANTIZAR EL MENSAJE DE ERROR
       rootScaffoldMessengerKey.currentState
         ?..hideCurrentSnackBar()
         ..showSnackBar(
@@ -98,8 +96,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _processAlreadyStarted(
-      PendingNotificationAction action,
-      ) async {
+      PendingNotificationAction action) async {
     await _service.logNotificationEvent(
       responsibilityId: action.responsibilityId,
       type: 'notification_action_selected',
@@ -119,8 +116,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _processNotYet(
-      PendingNotificationAction action,
-      ) async {
+      PendingNotificationAction action) async {
     await _service.recordNotYetResponse(
       responsibilityId: action.responsibilityId,
     );
@@ -131,7 +127,6 @@ class _HomeScreenState extends State<HomeScreen> {
       actionSelected: action.actionId,
     );
 
-    // USAMOS LA LLAVE GLOBAL PARA GARANTIZAR QUE EL SNACKBAR APAREZCA SIEMPRE
     rootScaffoldMessengerKey.currentState
       ?..hideCurrentSnackBar()
       ..showSnackBar(
@@ -147,80 +142,111 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('BiPi', style: AppTypography.logo(color: palette.textPrimary, size: 24)),
-        actions: [
-          const ThemeToggleButton(),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => FirebaseAuth.instance.signOut(),
-            tooltip: 'Cerrar sesión',
-          ),
-        ],
-      ),
-      body: StreamBuilder<List<Responsibility>>(
-        stream: _service.watchActiveResponsibilities(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
-          }
 
-          if (snapshot.hasError) {
-            return Center(
+    return StreamBuilder<List<Responsibility>>(
+      stream: _service.watchActiveResponsibilities(),
+      builder: (context, snapshot) {
+        Widget body;
+        List<Responsibility> items = const [];
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          body = const Center(
+            child: CircularProgressIndicator(),
+          );
+        } else if (snapshot.hasError) {
+          debugPrint('Home error: ${snapshot.error}');
+          body = Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
               child: Text(
-                'Error: ${snapshot.error}',
-                style: AppTypography.body(color: palette.textPrimary),
+                'No pudimos cargar tus responsabilidades. '
+                    'Revisa tu conexión e inténtalo nuevamente.',
+                style: AppTypography.body(color: palette.destructive),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        } else {
+          items = snapshot.data ?? [];
+          if (items.isEmpty) {
+            body = _EmptyState(
+              onCreate: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) =>
+                  const CaptureResponsibilityScreen(),
+                ),
               ),
             );
+          } else {
+            body = ListView.builder(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              itemCount: items.length,
+              itemBuilder: (context, index) {
+                final responsibility = items[index];
+                return ResponsibilityCard(
+                  key: ValueKey(responsibility.id),
+                  responsibility: responsibility,
+                  service: _service,
+                );
+              },
+            );
           }
+        }
 
-          final items = snapshot.data ?? [];
+        final showFab = snapshot.hasData &&
+            !snapshot.hasError &&
+            items.isNotEmpty;
 
-          if (items.isEmpty) {
-            return const _EmptyState();
-          }
-
-          return ListView.builder(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            itemCount: items.length,
-            itemBuilder: (context, index) {
-              final responsibility = items[index];
-
-              return ResponsibilityCard(
-                key: ValueKey(responsibility.id),
-                responsibility: responsibility,
-                service: _service,
-              );
-            },
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => const CaptureResponsibilityScreen(),
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(
+              'BiPi',
+              style: AppTypography.logo(
+                color: palette.textPrimary,
+                size: 24,
+              ),
+            ),
+            actions: [
+              const ThemeToggleButton(),
+              IconButton(
+                icon: const Icon(Icons.logout),
+                onPressed: () => FirebaseAuth.instance.signOut(),
+                tooltip: 'Cerrar sesión',
+                color: palette.textPrimary,
+              ),
+            ],
           ),
-        ),
-        icon: const Icon(Icons.add),
-        label: const Text('Nueva'),
-        backgroundColor: AppColors.amber,
-        foregroundColor: AppColors.deepBlue,
-      ),
+          body: body,
+          floatingActionButton: showFab
+              ? FloatingActionButton.extended(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) =>
+                const CaptureResponsibilityScreen(),
+              ),
+            ),
+            icon: const Icon(Icons.add),
+            label: const Text('Nueva'),
+            backgroundColor: palette.primaryAction,
+            foregroundColor: palette.onPrimaryAction,
+          )
+              : null,
+        );
+      },
     );
   }
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+  final VoidCallback onCreate;
+
+  const _EmptyState({required this.onCreate});
 
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -232,9 +258,46 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'No tienes responsabilidades registradas todavía.',
+              'Todavía no has registrado una responsabilidad.',
               textAlign: TextAlign.center,
-              style: AppTypography.body(color: palette.textPrimary),
+              style: AppTypography.screenTitle(
+                color: palette.textPrimary,
+                size: 20,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Registra una y compara cuándo crees que empezarás '
+                  'con cuándo empiezas realmente.',
+              textAlign: TextAlign.center,
+              style: AppTypography.body(
+                color: palette.textSecondary,
+                size: 15,
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: onCreate,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: palette.primaryAction,
+                  foregroundColor: palette.onPrimaryAction,
+                  minimumSize: const Size.fromHeight(48),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                ),
+                child: Text(
+                  'REGISTRAR PRIMERA RESPONSABILIDAD',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.button(
+                    color: palette.onPrimaryAction,
+                    size: 14,
+                  ),
+                ),
+              ),
             ),
           ],
         ),
