@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'AnalyticsService.dart';
 import 'Responsibility.dart';
 import 'ResponsibilityService.dart';
+import 'VerificationNotificationService.dart';
 import 'main.dart';
 import 'AppColors.dart';
 
@@ -23,16 +24,15 @@ class ResponsibilityCard extends StatefulWidget {
 
 class _ResponsibilityCardState extends State<ResponsibilityCard> {
   final _analytics = AnalyticsService();
+  final _notifications = VerificationNotificationService();
 
   bool _isMarkingStarted = false;
+  bool _isSavingDetails = false;
 
-  @override
-  void dispose() {
-    super.dispose();
-  }
+  bool get _isBusy => _isMarkingStarted || _isSavingDetails;
 
   Future<void> _markStarted() async {
-    if (_isMarkingStarted) return;
+    if (_isBusy) return;
 
     setState(() {
       _isMarkingStarted = true;
@@ -91,6 +91,125 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
     );
   }
 
+  Future<void> _openMoreActions() async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppPalette.of(context).surface,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Corregir detalles'),
+              onTap: () => Navigator.of(ctx).pop('edit_details'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (action == 'edit_details' && mounted) {
+      await _editDetails();
+    }
+  }
+
+  Future<void> _editDetails() async {
+    final result = await showModalBottomSheet<_DetailsEditResult>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _DetailsEditorSheet(
+        initialType: widget.responsibility.type,
+        initialSubject: widget.responsibility.subject ?? '',
+        initialDescription: widget.responsibility.description ?? '',
+      ),
+    );
+
+    if (result == null || !mounted) return;
+
+    setState(() {
+      _isSavingDetails = true;
+    });
+
+    try {
+      final oldSubject = widget.responsibility.subject?.trim();
+      final oldLabel = (oldSubject != null && oldSubject.isNotEmpty)
+          ? oldSubject
+          : _typeLabel(widget.responsibility.type);
+
+      final newSubject = result.subject?.trim();
+      final newLabel = (newSubject != null && newSubject.isNotEmpty)
+          ? newSubject
+          : _typeLabel(result.type);
+
+      await widget.service.updateResponsibilityDetails(
+        responsibilityId: widget.responsibility.id,
+        type: result.type,
+        subject: result.subject,
+        description: result.description,
+      );
+
+      final predicted = widget.responsibility.predictedStartAt;
+      final shouldUpdateNotification = oldLabel != newLabel &&
+          predicted != null &&
+          predicted.isAfter(DateTime.now());
+
+      if (!shouldUpdateNotification) {
+        if (mounted) {
+          _showMessage('Detalles corregidos.');
+        }
+        return;
+      }
+
+      try {
+        await _notifications.cancelVerification(widget.responsibility.id);
+        await _notifications.scheduleVerification(
+          responsibilityId: widget.responsibility.id,
+          subjectLabel: newLabel,
+          predictedStartAt: predicted,
+        );
+
+        if (mounted) {
+          _showMessage('Detalles corregidos.');
+        }
+      } catch (e) {
+        debugPrint('Update notification error: $e');
+        if (mounted) {
+          _showMessage(
+            'Los detalles fueron corregidos, pero no pudimos actualizar '
+                'el texto del recordatorio.',
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Update details error: $e');
+      if (mounted) {
+        _showMessage('No se pudo corregir la responsabilidad.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSavingDetails = false;
+        });
+      }
+    }
+  }
+
+  void _showMessage(String message) {
+    final palette = AppPalette.of(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: AppTypography.body(color: palette.surface),
+        ),
+        backgroundColor: palette.textPrimary,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
@@ -129,69 +248,88 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
+          clipBehavior: Clip.none,
           children: [
-            Text(
-              r.subject ?? _typeLabel(r.type),
-              style: AppTypography.label(
-                color: palette.textPrimary,
-                size: 16,
-              ).copyWith(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 4),
-            if (r.predictedStartAt != null)
-              Text(
-                'Pensabas comenzar ${_relativeDay(r.predictedStartAt!)}',
-                style: AppTypography.body(
-                  color: palette.textSecondary,
-                  size: 14,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 36),
+                  child: Text(
+                    r.subject ?? _typeLabel(r.type),
+                    style: AppTypography.label(
+                      color: palette.textPrimary,
+                      size: 16,
+                    ).copyWith(fontWeight: FontWeight.w600),
+                  ),
                 ),
-              ),
-            const SizedBox(height: 4),
-            Text(
-              'Entrega ${_relativeDay(r.dueAt)}',
-              style: AppTypography.body(
-                color: palette.textSecondary,
-                size: 14,
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (hasStarted) ...[
-              _buildConfrontation(palette, r),
-            ] else ...[
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _isMarkingStarted ? null : _markStarted,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: palette.primaryAction,
-                        foregroundColor: palette.onPrimaryAction,
-                        disabledBackgroundColor: palette.disabledBackground,
-                        disabledForegroundColor: palette.disabledForeground,
-                      ),
-                      child: _isMarkingStarted
-                          ? SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          color: palette.onPrimaryAction,
-                        ),
-                      )
-                          : const Text('Empecé a trabajar en esto'),
+                const SizedBox(height: 4),
+                if (r.predictedStartAt != null)
+                  Text(
+                    'Pensabas comenzar ${_relativeDay(r.predictedStartAt!)}',
+                    style: AppTypography.body(
+                      color: palette.textSecondary,
+                      size: 14,
                     ),
                   ),
-                  IconButton(
-                    tooltip: '¿Empezaste antes y olvidaste registrarlo?',
-                    icon: const Icon(Icons.history),
-                    color: palette.textMuted,
-                    onPressed: _markStartedInThePast,
+                const SizedBox(height: 4),
+                Text(
+                  'Entrega ${_relativeDay(r.dueAt)}',
+                  style: AppTypography.body(
+                    color: palette.textSecondary,
+                    size: 14,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (hasStarted) ...[
+                  _buildConfrontation(palette, r),
+                ] else ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _isBusy ? null : _markStarted,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: palette.primaryAction,
+                            foregroundColor: palette.onPrimaryAction,
+                            disabledBackgroundColor: palette.disabledBackground,
+                            disabledForegroundColor: palette.disabledForeground,
+                          ),
+                          child: _isMarkingStarted
+                              ? SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              color: palette.onPrimaryAction,
+                            ),
+                          )
+                              : const Text('Empecé a trabajar en esto'),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: '¿Empezaste antes y olvidaste registrarlo?',
+                        icon: const Icon(Icons.history),
+                        color: palette.textMuted,
+                        onPressed: _isBusy ? null : _markStartedInThePast,
+                      ),
+                    ],
                   ),
                 ],
+              ],
+            ),
+            Positioned(
+              top: -12,
+              right: -8,
+              child: IconButton(
+                tooltip: 'Más acciones',
+                icon: const Icon(Icons.more_vert),
+                iconSize: 20,
+                color: palette.textMuted,
+                onPressed: _isBusy ? null : _openMoreActions,
               ),
-            ],
+            ),
           ],
         ),
       ),
@@ -346,6 +484,241 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
     if (diff == -1) return 'ayer a las $time';
     if (diff > 1) return 'en $diff días';
     return 'hace ${-diff} días';
+  }
+}
+
+class _DetailsEditResult {
+  final ResponsibilityType type;
+  final String? subject;
+  final String? description;
+
+  const _DetailsEditResult({
+    required this.type,
+    required this.subject,
+    required this.description,
+  });
+}
+
+class _DetailsEditorSheet extends StatefulWidget {
+  final ResponsibilityType initialType;
+  final String initialSubject;
+  final String initialDescription;
+
+  const _DetailsEditorSheet({
+    required this.initialType,
+    required this.initialSubject,
+    required this.initialDescription,
+  });
+
+  @override
+  State<_DetailsEditorSheet> createState() => _DetailsEditorSheetState();
+}
+
+class _DetailsEditorSheetState extends State<_DetailsEditorSheet> {
+  late ResponsibilityType _type;
+  late final TextEditingController _subjectController;
+  late final TextEditingController _descriptionController;
+
+  @override
+  void initState() {
+    super.initState();
+    _type = widget.initialType;
+    _subjectController = TextEditingController(text: widget.initialSubject);
+    _descriptionController =
+        TextEditingController(text: widget.initialDescription);
+  }
+
+  @override
+  void dispose() {
+    _subjectController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final subject = _subjectController.text.trim();
+    final description = _descriptionController.text.trim();
+
+    Navigator.of(context).pop(
+      _DetailsEditResult(
+        type: _type,
+        subject: subject.isEmpty ? null : subject,
+        description: description.isEmpty ? null : description,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPalette.of(context);
+
+    return AnimatedPadding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      duration: const Duration(milliseconds: 150),
+      child: Material(
+        color: palette.surface,
+        clipBehavior: Clip.antiAlias,
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(24),
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Align(
+                alignment: Alignment.topCenter,
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(top: 4, bottom: 12),
+                  decoration: BoxDecoration(
+                    color: palette.textMuted,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Text(
+                'Corregir detalles',
+                style: AppTypography.screenTitle(
+                  color: palette.textPrimary,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Tipo',
+                style: AppTypography.label(
+                  color: palette.textPrimary,
+                  size: 15,
+                ).copyWith(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: ResponsibilityType.values.map((t) {
+                  return ChoiceChip(
+                    label: Text(
+                      _typeLabel(t),
+                      style: AppTypography.label(
+                        color: _type == t
+                            ? palette.onPrimaryAction
+                            : palette.textPrimary,
+                      ),
+                    ),
+                    selected: _type == t,
+                    selectedColor: palette.primaryAction,
+                    backgroundColor: palette.surface,
+                    side: BorderSide(color: palette.border),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    onSelected: (_) => setState(() => _type = t),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _subjectController,
+                maxLines: 1,
+                textInputAction: TextInputAction.next,
+                style: AppTypography.body(color: palette.textPrimary),
+                decoration: InputDecoration(
+                  labelText: 'Materia (opcional)',
+                  labelStyle: AppTypography.label(color: palette.textMuted),
+                  filled: true,
+                  fillColor: palette.surface,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: palette.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide:
+                    BorderSide(color: palette.textPrimary, width: 1.4),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _descriptionController,
+                maxLines: 3,
+                style: AppTypography.body(color: palette.textPrimary),
+                decoration: InputDecoration(
+                  labelText: 'Descripción (opcional)',
+                  labelStyle: AppTypography.label(color: palette.textMuted),
+                  filled: true,
+                  fillColor: palette.surface,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: palette.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide:
+                    BorderSide(color: palette.textPrimary, width: 1.4),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(
+                      'CANCELAR',
+                      style: AppTypography.button(
+                        color: palette.textPrimary,
+                        size: 14,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: _save,
+                    child: Text(
+                      'GUARDAR',
+                      style: AppTypography.button(
+                        color: palette.primaryAction,
+                        size: 14,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _typeLabel(ResponsibilityType t) {
+    switch (t) {
+      case ResponsibilityType.exam:
+        return 'Examen';
+      case ResponsibilityType.lab:
+        return 'Laboratorio';
+      case ResponsibilityType.project:
+        return 'Proyecto';
+      case ResponsibilityType.homework:
+        return 'Tarea';
+      case ResponsibilityType.presentation:
+        return 'Exposición';
+    }
   }
 }
 
