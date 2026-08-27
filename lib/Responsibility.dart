@@ -2,38 +2,32 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Fuente del dato de inicio: distingue calidad de la señal.
 enum StartSource {
-  manualLive, // Tocó "Empecé" en el momento real.
-  manualRecalled, // Registró un inicio pasado, de memoria.
-  reminderLive, // Respondió "Estoy empezando" a la notificación.
-  reminderRecalled, // Respondió "Ya había empezado" a la notificación.
+  manualLive,
+  manualRecalled,
+  reminderLive,
+  reminderRecalled,
 }
 
 enum ResponsibilityStatus { pending, started, completed, submitted }
 
 enum ResponsibilityType { exam, lab, project, homework, presentation }
 
-/// Una responsabilidad académica (tarea, examen, laboratorio, etc.)
-/// Este modelo incluye TODOS los campos de la spec completa, aunque el MVP
-/// solo use un subconjunto. Esto evita migraciones de esquema más adelante.
 class Responsibility {
   final String id;
   final String userId;
   final ResponsibilityType type;
-  final String? subject; // Materia (ej. "Física")
+  final String? subject;
   final String? description;
 
   final DateTime createdAt;
   final DateTime dueAt;
 
-  // --- Predicción declarada por el estudiante ---
-  final DateTime? predictedStartAt; // null si eligió "todavía no lo sé"
-  final String predictionStatus; // 'declared' | 'unknown'
+  final DateTime? predictedStartAt;
+  final String predictionStatus;
 
-  // --- Realidad observada ---
   DateTime? startedAt;
   StartSource? startSource;
 
-  // Reservados para después del sprint de validación (no se usan aún).
   DateTime? completedAt;
   DateTime? submittedAt;
 
@@ -56,16 +50,11 @@ class Responsibility {
     this.status = ResponsibilityStatus.pending,
   });
 
-  /// Diferencia entre lo previsto y lo real, en horas.
-  /// Positivo = empezó después de lo previsto (procrastinó).
-  /// Negativo = empezó antes de lo previsto.
-  /// Null si no hay predicción o no ha empezado.
   double? get startDeviationHours {
     if (predictedStartAt == null || startedAt == null) return null;
     return startedAt!.difference(predictedStartAt!).inMinutes / 60.0;
   }
 
-  /// true si el dato de inicio es de "alta calidad" (en vivo, no recordado).
   bool get isHighQualityStart =>
       startSource == StartSource.manualLive ||
           startSource == StartSource.reminderLive;
@@ -124,16 +113,21 @@ class Responsibility {
   }
 }
 
-/// Evento inmutable de predicción. NUNCA se sobrescribe — cada
-/// reprogramación crea un nuevo registro. Esto es lo que permite,
-/// más adelante, medir cuántas veces un estudiante negoció consigo mismo.
 class PredictionEvent {
   final String userId;
   final String responsibilityId;
-  final DateTime predictedAt; // Cuándo se hizo esta predicción/respuesta.
-  final DateTime? predictedStartAt; // Nueva fecha prevista (si aplica).
-  final String response; // 'started' | 'not_started' | 'postponed'
+  final DateTime predictedAt;
+  final DateTime? predictedStartAt;
+  final String response;
   final DateTime respondedAt;
+
+  final String? eventId;
+  final DateTime? previousDueAt;
+  final DateTime? newDueAt;
+  final DateTime? previousPredictedStartAt;
+  final DateTime? newPredictedStartAt;
+  final String? previousPredictionStatus;
+  final String? newPredictionStatus;
 
   PredictionEvent({
     required this.userId,
@@ -142,25 +136,56 @@ class PredictionEvent {
     this.predictedStartAt,
     required this.response,
     required this.respondedAt,
+    this.eventId,
+    this.previousDueAt,
+    this.newDueAt,
+    this.previousPredictedStartAt,
+    this.newPredictedStartAt,
+    this.previousPredictionStatus,
+    this.newPredictionStatus,
   });
 
-  Map<String, dynamic> toFirestore() => {
-    'userId': userId,
-    'responsibilityId': responsibilityId,
-    'predictedAt': Timestamp.fromDate(predictedAt),
-    'predictedStartAt':
-    predictedStartAt != null ? Timestamp.fromDate(predictedStartAt!) : null,
-    'response': response,
-    'respondedAt': Timestamp.fromDate(respondedAt),
-  };
+  Map<String, dynamic> toFirestore() {
+    final map = <String, dynamic>{
+      'userId': userId,
+      'responsibilityId': responsibilityId,
+      'predictedAt': Timestamp.fromDate(predictedAt),
+      'predictedStartAt': predictedStartAt != null
+          ? Timestamp.fromDate(predictedStartAt!)
+          : null,
+      'response': response,
+      'respondedAt': Timestamp.fromDate(respondedAt),
+    };
+
+    if (eventId != null) {
+      map['eventId'] = eventId;
+    }
+
+    if (response == 'prediction_corrected') {
+      map['previousDueAt'] = previousDueAt != null
+          ? Timestamp.fromDate(previousDueAt!)
+          : null;
+      map['newDueAt'] = newDueAt != null
+          ? Timestamp.fromDate(newDueAt!)
+          : null;
+      map['previousPredictedStartAt'] = previousPredictedStartAt != null
+          ? Timestamp.fromDate(previousPredictedStartAt!)
+          : null;
+      map['newPredictedStartAt'] = newPredictedStartAt != null
+          ? Timestamp.fromDate(newPredictedStartAt!)
+          : null;
+      map['previousPredictionStatus'] = previousPredictionStatus;
+      map['newPredictionStatus'] = newPredictionStatus;
+    }
+
+    return map;
+  }
 }
 
-/// Eventos de la notificación de verificación, para no confundir
-/// "no llegó la notificación" con "el usuario la ignoró".
 class NotificationEvent {
   final String userId;
   final String responsibilityId;
-  final String type; // 'notification_scheduled' | 'notification_opened' | 'notification_action_selected'
+  final String type;
   final DateTime at;
   final String? actionSelected;
 
