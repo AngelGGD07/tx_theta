@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'AnalyticsService.dart';
 import 'Responsibility.dart';
 import 'ResponsibilityService.dart';
 import 'VerificationNotificationService.dart';
 import 'AppColors.dart';
 
+/// Predicción de inicio: opciones simples, tal como se definió en la spec.
+/// "Todavía no lo sé" deja predictedStartAt = null explícitamente, nunca
+/// se asume "hoy" por defecto.
 enum _StartGuess { today, tomorrow, pickDate, unknown }
 
 class CaptureResponsibilityScreen extends StatefulWidget {
@@ -69,7 +73,8 @@ class _CaptureResponsibilityScreenState
     );
     if (time == null || !mounted) return;
     setState(() {
-      _dueAt = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+      _dueAt =
+          DateTime(date.year, date.month, date.day, time.hour, time.minute);
     });
   }
 
@@ -173,6 +178,13 @@ class _CaptureResponsibilityScreenState
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
+
+    final displayName =
+    FirebaseAuth.instance.currentUser?.displayName?.trim();
+    final predictionTitle = (displayName != null && displayName.isNotEmpty)
+        ? '$displayName, ¿cuándo crees que empezarás?'
+        : '¿Cuándo crees que empezarás?';
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -242,7 +254,7 @@ class _CaptureResponsibilityScreenState
               ),
             ),
             const SizedBox(height: 32),
-            _buildSectionTitle('¿Cuándo crees que empezarás?', palette),
+            _buildSectionTitle(predictionTitle, palette),
             const SizedBox(height: 4),
             Text(
               'No cuándo deberías. Cuándo crees que realmente lo harás.',
