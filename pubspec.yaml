@@ -74,6 +74,7 @@ flutter:
    - assets/eye_open.png
    - assets/eye_closed.png
    - assets/google_dark.png
+   - assets/microsoft.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
