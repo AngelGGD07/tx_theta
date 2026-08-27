@@ -245,6 +245,50 @@ class ResponsibilityService {
     }
   }
 
+  /// Corrige los detalles descriptivos de una responsabilidad.
+  ///
+  /// Solo actualiza [type], [subject] y [description].
+  /// No modifica predicción, inicio, estado ni fechas conductuales.
+  Future<void> updateResponsibilityDetails({
+    required String responsibilityId,
+    required ResponsibilityType type,
+    String? subject,
+    String? description,
+  }) async {
+    final docRef = _responsibilities.doc(responsibilityId);
+    final snap = await docRef.get();
+
+    if (!snap.exists) {
+      throw StateError(
+        'Responsabilidad no encontrada: $responsibilityId',
+      );
+    }
+
+    final data = snap.data()!;
+
+    if (data['userId'] != _uid) {
+      throw StateError(
+        'La responsabilidad no pertenece al usuario autenticado.',
+      );
+    }
+
+    String? normalizedSubject;
+    if (subject != null && subject.trim().isNotEmpty) {
+      normalizedSubject = subject.trim();
+    }
+
+    String? normalizedDescription;
+    if (description != null && description.trim().isNotEmpty) {
+      normalizedDescription = description.trim();
+    }
+
+    await docRef.update({
+      'type': type.name,
+      'subject': normalizedSubject,
+      'description': normalizedDescription,
+    });
+  }
+
   /// Registra que el estudiante respondió "Todavía no" a la notificación.
   ///
   /// No modifica la responsabilidad principal:
