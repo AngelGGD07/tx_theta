@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:BiPi/AppColors.dart';
 import 'package:BiPi/GoogleSignInButton.dart';
+import 'package:BiPi/MicrosoftSignInButton.dart';
 import 'package:BiPi/ThemeToggleButton.dart';
 
 /// -----------------------------------------------------------------------
@@ -26,8 +27,9 @@ class _Strings {
       'have_account': '¿Ya tienes cuenta? Inicia sesión',
       'or': 'o continúa con',
       'google': 'Continuar con Google',
+      'microsoft': 'Continuar con Microsoft',
       'welcome_back': '¡Bienvenido de nuevo!',
-      'account_created': '¡Cuenta creada con éxito!',
+      'account_created': 'Cuenta creada correctamente.',
       'generic_error': 'Ocurrió un error',
       'no_internet':
       'No se pudo conectar. Revisa tu conexión a internet e inténtalo de nuevo.',
@@ -46,6 +48,8 @@ class _Strings {
       'empty_password': 'Introduce tu contraseña.',
       'invalid_password': 'Contraseña inválida.',
       'short_password': 'La contraseña debe tener al menos 6 caracteres.',
+      'error_account_exists_different_credential':
+      'Ya existe una cuenta con este correo. Inicia sesión con el método que utilizaste originalmente.',
     },
     AppLanguage.en: {
       'tagline': 'Best Planner',
@@ -60,8 +64,9 @@ class _Strings {
       'have_account': 'Already have an account? Log in',
       'or': 'or continue with',
       'google': 'Continue with Google',
+      'microsoft': 'Continue with Microsoft',
       'welcome_back': 'Welcome back!',
-      'account_created': 'Account created successfully!',
+      'account_created': 'Account created successfully.',
       'generic_error': 'Something went wrong',
       'no_internet':
       "Couldn't connect. Check your internet connection and try again.",
@@ -80,6 +85,8 @@ class _Strings {
       'empty_password': 'Enter your password.',
       'invalid_password': 'Invalid password.',
       'short_password': 'Password must be at least 6 characters.',
+      'error_account_exists_different_credential':
+      'An account already exists with this email. Sign in with the method you originally used.',
     },
   };
 
@@ -97,7 +104,8 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen>
+    with WidgetsBindingObserver {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
@@ -111,7 +119,54 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
   AppLanguage _lang = AppLanguage.es;
 
+  bool _isMicrosoftAuthInProgress = false;
+  bool _microsoftFlowLeftApp = false;
+  int _microsoftAttemptId = 0;
+
   String _t(String key) => _Strings.t(_lang, key);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _emailController.dispose();
+    _passwordController.dispose();
+    _passwordFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_isMicrosoftAuthInProgress) return;
+
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      _microsoftFlowLeftApp = true;
+    } else if (state == AppLifecycleState.resumed) {
+      if (!_microsoftFlowLeftApp) return;
+
+      final attemptId = _microsoftAttemptId;
+
+      Future<void>.delayed(const Duration(milliseconds: 1800), () {
+        if (!mounted) return;
+        if (attemptId != _microsoftAttemptId) return;
+        if (!_isMicrosoftAuthInProgress) return;
+        if (FirebaseAuth.instance.currentUser != null) return;
+
+        _isMicrosoftAuthInProgress = false;
+        _microsoftFlowLeftApp = false;
+
+        setState(() {
+          _isLoading = false;
+        });
+      });
+    }
+  }
 
   /// Traduce errores comunes de Firebase Auth a mensajes claros.
   String _friendlyAuthError(Object error) {
@@ -136,6 +191,17 @@ class _LoginScreenState extends State<LoginScreen> {
           return _t('error_too_many_requests');
         case 'internal-error':
           return _t('error_internal');
+        case 'account-exists-with-different-credential':
+          return _t('error_account_exists_different_credential');
+      // Cancelaciones silenciosas provisionales.
+      // La lista definitiva se ajustará según los códigos reales observados.
+        case 'canceled':
+        case 'cancelled':
+        case 'user-cancelled':
+        case 'web-context-canceled':
+        case 'web-context-cancelled':
+        case 'popup-closed-by-user':
+          return '';
         default:
           return _t('generic_error');
       }
@@ -144,7 +210,6 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   /// Valida localmente los campos de email/password.
-  /// Devuelve null si la validación pasa, o el mensaje de error.
   String? _validateFields() {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
@@ -236,17 +301,76 @@ class _LoginScreenState extends State<LoginScreen> {
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
-      await _auth
+      final userCredential = await _auth
           .signInWithCredential(credential)
           .timeout(const Duration(seconds: 15));
+
+      final isNewUser =
+          userCredential.additionalUserInfo?.isNewUser ?? false;
+
       if (!mounted) return;
-      _showMessage(_t('welcome_back'));
+      _showMessage(
+        isNewUser ? _t('account_created') : _t('welcome_back'),
+      );
     } catch (e) {
       debugPrint('Auth error: $e');
       if (!mounted) return;
       _showMessage(_friendlyAuthError(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _signInWithMicrosoft() async {
+    if (_isLoading) return;
+
+    final attemptId = ++_microsoftAttemptId;
+
+    setState(() {
+      _isLoading = true;
+      _isMicrosoftAuthInProgress = true;
+      _microsoftFlowLeftApp = false;
+    });
+
+    try {
+      final provider = MicrosoftAuthProvider();
+
+      // Configuración de tenant y prompt según plan aprobado.
+      // Se asume compatibilidad con firebase_auth actual.
+      provider.setCustomParameters({
+        'prompt': 'select_account',
+        'tenant': 'common',
+      });
+
+      // Sin timeout corto: el flujo interactivo puede tardar
+      // por selección de cuenta, credenciales o MFA.
+      final userCredential = await _auth.signInWithProvider(provider);
+
+      final isNewUser =
+          userCredential.additionalUserInfo?.isNewUser ?? false;
+
+      if (!mounted) return;
+      _showMessage(
+        isNewUser ? _t('account_created') : _t('welcome_back'),
+      );
+    } catch (e) {
+      debugPrint('Microsoft Auth error: $e');
+      if (!mounted) return;
+      final message = _friendlyAuthError(e);
+      // En cancelación silenciosa no se muestra mensaje.
+      if (message.isNotEmpty) {
+        _showMessage(message);
+      }
+    } finally {
+      if (!mounted) return;
+      if (attemptId != _microsoftAttemptId) return;
+
+      _isMicrosoftAuthInProgress = false;
+      _microsoftFlowLeftApp = false;
+
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
@@ -266,14 +390,6 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() {
       _lang = _lang == AppLanguage.es ? AppLanguage.en : AppLanguage.es;
     });
-  }
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    _passwordFocusNode.dispose();
-    super.dispose();
   }
 
   // ------------------------------ BUILD --------------------------------
@@ -301,7 +417,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  /// Selector de idioma y tema.
   Widget _buildTopBar(AppPalette palette) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
@@ -329,7 +444,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  /// Logo real + "BiPi" + tagline.
   Widget _buildLogoAndName(AppPalette palette) {
     return Center(
       child: Row(
@@ -416,6 +530,7 @@ class _LoginScreenState extends State<LoginScreen> {
               palette: palette,
               controller: _emailController,
               label: _t('email'),
+              enabled: !_isLoading,
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
               onSubmitted: _isLoading
@@ -429,6 +544,7 @@ class _LoginScreenState extends State<LoginScreen> {
               label: _isLogin
                   ? _t('password_login')
                   : _t('password_signup'),
+              enabled: !_isLoading,
               obscureText: _obscurePassword,
               focusNode: _passwordFocusNode,
               textInputAction: TextInputAction.done,
@@ -489,6 +605,11 @@ class _LoginScreenState extends State<LoginScreen> {
               onPressed: _isLoading ? null : _signInWithGoogle,
               label: _t('google'),
             ),
+            const SizedBox(height: 12),
+            MicrosoftSignInButton(
+              onPressed: _isLoading ? null : _signInWithMicrosoft,
+              label: _t('microsoft'),
+            ),
             const SizedBox(height: 16),
             Center(
               child: TextButton(
@@ -512,6 +633,7 @@ class _LoginScreenState extends State<LoginScreen> {
     required AppPalette palette,
     required TextEditingController controller,
     required String label,
+    required bool enabled,
     TextInputType? keyboardType,
     bool obscureText = false,
     Widget? suffixIcon,
@@ -526,6 +648,7 @@ class _LoginScreenState extends State<LoginScreen> {
       obscureText: obscureText,
       textInputAction: textInputAction,
       onSubmitted: onSubmitted,
+      enabled: enabled,
       style: AppTypography.body(color: palette.textPrimary),
       decoration: InputDecoration(
         labelText: label,
@@ -546,6 +669,10 @@ class _LoginScreenState extends State<LoginScreen> {
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: palette.textPrimary, width: 1.4),
+        ),
+        disabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: palette.border),
         ),
       ),
     );

@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:BiPi/CaptureResponsibilityScreen.dart';
 
 import 'Responsibility.dart';
@@ -117,26 +118,60 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _processNotYet(
       PendingNotificationAction action) async {
-    await _service.recordNotYetResponse(
-      responsibilityId: action.responsibilityId,
-    );
+    var phase = 'inicio';
 
-    await _service.logNotificationEvent(
-      responsibilityId: action.responsibilityId,
-      type: 'notification_action_selected',
-      actionSelected: action.actionId,
-    );
-
-    rootScaffoldMessengerKey.currentState
-      ?..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Todavía no has comenzado. Conservamos tu predicción.',
-          ),
-          duration: Duration(seconds: 6),
-        ),
+    try {
+      phase = 'recordNotYetResponse';
+      debugPrint(
+        'NOT_YET FASE $phase iniciada. '
+            'responsibilityId=${action.responsibilityId}',
       );
+      await _service.recordNotYetResponse(
+        responsibilityId: action.responsibilityId,
+      );
+      debugPrint(
+        'NOT_YET FASE $phase terminada. '
+            'responsibilityId=${action.responsibilityId}',
+      );
+
+      phase = 'logNotificationEvent';
+      debugPrint(
+        'NOT_YET FASE $phase iniciada. '
+            'actionId=${action.actionId}',
+      );
+      await _service.logNotificationEvent(
+        responsibilityId: action.responsibilityId,
+        type: 'notification_action_selected',
+        actionSelected: action.actionId,
+      );
+      debugPrint(
+        'NOT_YET FASE $phase terminada. '
+            'actionId=${action.actionId}',
+      );
+
+      rootScaffoldMessengerKey.currentState
+        ?..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Todavía no has comenzado. Conservamos tu predicción.',
+            ),
+            duration: Duration(seconds: 6),
+          ),
+        );
+    } catch (error) {
+      debugPrint('NOT_YET FASE $phase FALLÓ: error=${error.runtimeType}');
+      if (error is FirebaseException) {
+        debugPrint('NOT_YET FASE $phase código Firebase: ${error.code}');
+      }
+      debugPrint('NOT_YET FASE $phase mensaje técnico: $error');
+      debugPrint(
+        'NOT_YET FASE $phase responsibilityId: '
+            '${action.responsibilityId}',
+      );
+      debugPrint('NOT_YET FASE $phase actionId: ${action.actionId}');
+      rethrow;
+    }
   }
 
   @override
