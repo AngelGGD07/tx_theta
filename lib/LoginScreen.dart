@@ -50,6 +50,7 @@ class _Strings {
       'short_password': 'La contraseña debe tener al menos 6 caracteres.',
       'error_account_exists_different_credential':
       'Ya existe una cuenta con este correo. Inicia sesión con el método que utilizaste originalmente.',
+      'error_user_disabled': 'Esta cuenta fue deshabilitada.',
     },
     AppLanguage.en: {
       'tagline': 'Best Planner',
@@ -87,6 +88,7 @@ class _Strings {
       'short_password': 'Password must be at least 6 characters.',
       'error_account_exists_different_credential':
       'An account already exists with this email. Sign in with the method you originally used.',
+      'error_user_disabled': 'This account has been disabled.',
     },
   };
 
@@ -119,10 +121,6 @@ class _LoginScreenState extends State<LoginScreen>
   bool _obscurePassword = true;
   AppLanguage _lang = AppLanguage.es;
 
-  bool _isMicrosoftAuthInProgress = false;
-  bool _microsoftFlowLeftApp = false;
-  int _microsoftAttemptId = 0;
-
   String _t(String key) => _Strings.t(_lang, key);
 
   @override
@@ -142,33 +140,9 @@ class _LoginScreenState extends State<LoginScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!_isMicrosoftAuthInProgress) return;
-
-    if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused) {
-      _microsoftFlowLeftApp = true;
-    } else if (state == AppLifecycleState.resumed) {
-      if (!_microsoftFlowLeftApp) return;
-
-      final attemptId = _microsoftAttemptId;
-
-      Future<void>.delayed(const Duration(milliseconds: 1800), () {
-        if (!mounted) return;
-        if (attemptId != _microsoftAttemptId) return;
-        if (!_isMicrosoftAuthInProgress) return;
-        if (FirebaseAuth.instance.currentUser != null) return;
-
-        _isMicrosoftAuthInProgress = false;
-        _microsoftFlowLeftApp = false;
-
-        setState(() {
-          _isLoading = false;
-        });
-      });
-    }
+    // No se requiere manejo especial para el flujo de verificación.
   }
 
-  /// Traduce errores comunes de Firebase Auth a mensajes claros.
   String _friendlyAuthError(Object error) {
     if (error is TimeoutException) {
       return _t('no_internet');
@@ -191,10 +165,10 @@ class _LoginScreenState extends State<LoginScreen>
           return _t('error_too_many_requests');
         case 'internal-error':
           return _t('error_internal');
+        case 'user-disabled':
+          return _t('error_user_disabled');
         case 'account-exists-with-different-credential':
           return _t('error_account_exists_different_credential');
-      // Cancelaciones silenciosas provisionales.
-      // La lista definitiva se ajustará según los códigos reales observados.
         case 'canceled':
         case 'cancelled':
         case 'user-cancelled':
@@ -209,7 +183,6 @@ class _LoginScreenState extends State<LoginScreen>
     return _t('generic_error');
   }
 
-  /// Valida localmente los campos de email/password.
   String? _validateFields() {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
@@ -257,23 +230,54 @@ class _LoginScreenState extends State<LoginScreen>
     setState(() => _isLoading = true);
     try {
       if (_isLogin) {
-        await _auth
+        final userCredential = await _auth
             .signInWithEmailAndPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         )
             .timeout(const Duration(seconds: 6));
+
+        final user = userCredential.user;
+        if (user == null) {
+          if (!mounted) return;
+          _showMessage(_t('generic_error'));
+          return;
+        }
+
+        await user.reload();
+
         if (!mounted) return;
+
+        final refreshedUser = _auth.currentUser;
+
+        if (refreshedUser != null && !refreshedUser.emailVerified) {
+          // No mostramos bienvenida. AuthGate mostrará verificación.
+          return;
+        }
+
         _showMessage(_t('welcome_back'));
       } else {
-        await _auth
+        final userCredential = await _auth
             .createUserWithEmailAndPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         )
             .timeout(const Duration(seconds: 6));
+
+        final user = userCredential.user;
+        if (user == null) {
+          if (!mounted) return;
+          _showMessage(_t('generic_error'));
+          return;
+        }
+
+        await FirebaseAuth.instance.setLanguageCode('es');
+        await user.sendEmailVerification();
+
         if (!mounted) return;
-        _showMessage(_t('account_created'));
+
+        // No _showMessage de cuenta creada.
+        // AuthGate mostrará EmailVerificationScreen.
       }
     } catch (e) {
       debugPrint('Auth error: $e');
@@ -324,26 +328,20 @@ class _LoginScreenState extends State<LoginScreen>
   Future<void> _signInWithMicrosoft() async {
     if (_isLoading) return;
 
-    final attemptId = ++_microsoftAttemptId;
+    setState(() => _isLoading = true);
 
-    setState(() {
-      _isLoading = true;
-      _isMicrosoftAuthInProgress = true;
-      _microsoftFlowLeftApp = false;
-    });
+    final attemptId = ++_microsoftAttemptId;
+    _isMicrosoftAuthInProgress = true;
+    _microsoftFlowLeftApp = false;
 
     try {
       final provider = MicrosoftAuthProvider();
 
-      // Configuración de tenant y prompt según plan aprobado.
-      // Se asume compatibilidad con firebase_auth actual.
       provider.setCustomParameters({
         'prompt': 'select_account',
         'tenant': 'common',
       });
 
-      // Sin timeout corto: el flujo interactivo puede tardar
-      // por selección de cuenta, credenciales o MFA.
       final userCredential = await _auth.signInWithProvider(provider);
 
       final isNewUser =
@@ -357,22 +355,21 @@ class _LoginScreenState extends State<LoginScreen>
       debugPrint('Microsoft Auth error: $e');
       if (!mounted) return;
       final message = _friendlyAuthError(e);
-      // En cancelación silenciosa no se muestra mensaje.
       if (message.isNotEmpty) {
         _showMessage(message);
       }
     } finally {
       if (!mounted) return;
       if (attemptId != _microsoftAttemptId) return;
-
       _isMicrosoftAuthInProgress = false;
       _microsoftFlowLeftApp = false;
-
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
     }
   }
+
+  bool _isMicrosoftAuthInProgress = false;
+  bool _microsoftFlowLeftApp = false;
+  int _microsoftAttemptId = 0;
 
   void _showMessage(String message) {
     final palette = AppPalette.of(context);

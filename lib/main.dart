@@ -15,6 +15,7 @@ import 'Responsibility.dart' show StartSource;
 import 'ConsentScreen.dart';
 import 'ConsentService.dart';
 import 'ThemeModeController.dart';
+import 'EmailVerificationScreen.dart';
 
 final rootScaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
@@ -52,15 +53,11 @@ Future<void> main() async {
 }
 
 Future<void> _handleNotificationAction(
-    String responsibilityId,
-    String actionId,
-    ) async {
+    String responsibilityId, String actionId) async {
   if (responsibilityId.isEmpty) return;
 
   try {
-    await _responsibilityService.ensureResponsibilityActive(
-      responsibilityId,
-    );
+    await _responsibilityService.ensureResponsibilityActive(responsibilityId);
   } on DiscardedResponsibilityException {
     _showDiscardedMessage();
     return;
@@ -104,14 +101,11 @@ Future<void> _handleNotificationAction(
           actualStartAt: DateTime.now(),
           source: StartSource.reminderLive,
         );
-
         if (didStart) {
           _showGlobalUndo(responsibilityId);
         }
       } on DiscardedResponsibilityException {
         _showDiscardedMessage();
-      } catch (e) {
-        debugPrint('Start-now action error: $e');
       }
       break;
 
@@ -184,7 +178,7 @@ class _AuthGateState extends State<_AuthGate> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
+      stream: FirebaseAuth.instance.userChanges(),
       builder: (context, authSnapshot) {
         if (authSnapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
@@ -193,12 +187,21 @@ class _AuthGateState extends State<_AuthGate> {
         }
 
         final user = authSnapshot.data;
+
         if (user == null) {
           _analytics.setUser(null);
           return const LoginScreen();
         }
 
         _analytics.setUser(user.uid);
+
+        final requiresPasswordVerification =
+        user.providerData.any((info) => info.providerId == 'password');
+
+        if (requiresPasswordVerification && !user.emailVerified) {
+          return const EmailVerificationScreen();
+        }
+
         return _buildConsentGate(user.uid);
       },
     );
