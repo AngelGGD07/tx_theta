@@ -5,6 +5,20 @@ import 'AnalyticsService.dart';
 import 'Responsibility.dart';
 import 'VerificationNotificationService.dart' show VerificationAction;
 
+class DiscardedResponsibilityException implements Exception {
+  const DiscardedResponsibilityException();
+}
+
+class ResponsibilityHasStartedException implements Exception {
+  const ResponsibilityHasStartedException();
+}
+
+class ResponsibilityHasEvidenceException implements Exception {
+  const ResponsibilityHasEvidenceException();
+}
+
+enum DiscardResponsibilityResult { discarded, alreadyDiscarded }
+
 class ResponsibilityService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final AnalyticsService _analytics = AnalyticsService();
@@ -90,32 +104,26 @@ class ResponsibilityService {
         .toList();
   }
 
+  Future<void> ensureResponsibilityActive(String responsibilityId) async {
+    final snap = await _responsibilities.doc(responsibilityId).get();
+
+    if (!snap.exists) {
+      throw StateError('Responsabilidad no encontrada: $responsibilityId');
+    }
+
+    final data = snap.data()!;
+
+    if (data['userId'] != _uid) {
+      throw StateError(
+          'La responsabilidad no pertenece al usuario autenticado.');
+    }
+
+    if (data['status'] == ResponsibilityStatus.discarded.name) {
+      throw const DiscardedResponsibilityException();
+    }
+  }
+
   Future<void> markStarted({
-    required String responsibilityId,
-    required DateTime actualStartAt,
-    required StartSource source,
-  }) async {
-    await _responsibilities.doc(responsibilityId).update({
-      'startedAt': Timestamp.fromDate(actualStartAt),
-      'startSource': source.name,
-      'status': ResponsibilityStatus.started.name,
-    });
-    await _logStartRegistered(responsibilityId, source);
-  }
-
-  Future<void> undoStart(String responsibilityId) async {
-    await _responsibilities.doc(responsibilityId).update({
-      'startedAt': null,
-      'startSource': null,
-      'status': ResponsibilityStatus.pending.name,
-    });
-    await _analytics.logEvent(
-      AnalyticsEvents.startUndone,
-      parameters: {AnalyticsParams.responsibilityId: responsibilityId},
-    );
-  }
-
-  Future<void> markStartedIfNotAlready({
     required String responsibilityId,
     required DateTime actualStartAt,
     required StartSource source,
@@ -132,6 +140,58 @@ class ResponsibilityService {
 
       final data = snap.data()!;
 
+      if (data['userId'] != _uid) {
+        throw StateError(
+            'La responsabilidad no pertenece al usuario autenticado.');
+      }
+
+      if (data['status'] == ResponsibilityStatus.discarded.name) {
+        throw const DiscardedResponsibilityException();
+      }
+
+      if (data['startedAt'] != null) {
+        return;
+      }
+
+      transaction.update(docRef, {
+        'startedAt': Timestamp.fromDate(actualStartAt),
+        'startSource': source.name,
+        'status': ResponsibilityStatus.started.name,
+      });
+      didWrite = true;
+    });
+
+    if (!didWrite) return;
+
+    await _logStartRegistered(responsibilityId, source);
+  }
+
+  Future<bool> markStartedIfNotAlready({
+    required String responsibilityId,
+    required DateTime actualStartAt,
+    required StartSource source,
+  }) async {
+    final docRef = _responsibilities.doc(responsibilityId);
+    var didWrite = false;
+
+    await _db.runTransaction((transaction) async {
+      final snap = await transaction.get(docRef);
+
+      if (!snap.exists) {
+        throw StateError('Responsabilidad no encontrada: $responsibilityId');
+      }
+
+      final data = snap.data()!;
+
+      if (data['userId'] != _uid) {
+        throw StateError(
+            'La responsabilidad no pertenece al usuario autenticado.');
+      }
+
+      if (data['status'] == ResponsibilityStatus.discarded.name) {
+        throw const DiscardedResponsibilityException();
+      }
+
       if (data['startedAt'] != null) {
         didWrite = false;
         return;
@@ -145,8 +205,54 @@ class ResponsibilityService {
       didWrite = true;
     });
 
-    if (!didWrite) return;
+    if (!didWrite) {
+      return false;
+    }
+
     await _logStartRegistered(responsibilityId, source);
+    return true;
+  }
+
+  Future<void> undoStart(String responsibilityId) async {
+    final docRef = _responsibilities.doc(responsibilityId);
+    var didWrite = false;
+
+    await _db.runTransaction((transaction) async {
+      final snap = await transaction.get(docRef);
+
+      if (!snap.exists) {
+        throw StateError('Responsabilidad no encontrada: $responsibilityId');
+      }
+
+      final data = snap.data()!;
+
+      if (data['userId'] != _uid) {
+        throw StateError(
+            'La responsabilidad no pertenece al usuario autenticado.');
+      }
+
+      if (data['status'] == ResponsibilityStatus.discarded.name) {
+        throw const DiscardedResponsibilityException();
+      }
+
+      if (data['status'] != ResponsibilityStatus.started.name) {
+        return;
+      }
+
+      transaction.update(docRef, {
+        'startedAt': null,
+        'startSource': null,
+        'status': ResponsibilityStatus.pending.name,
+      });
+      didWrite = true;
+    });
+
+    if (!didWrite) return;
+
+    await _analytics.logEvent(
+      AnalyticsEvents.startUndone,
+      parameters: {AnalyticsParams.responsibilityId: responsibilityId},
+    );
   }
 
   Future<void> _logStartRegistered(
@@ -283,7 +389,6 @@ class ResponsibilityService {
       final predictionChanged = oldPredictedStartAt != newPredictedStartAtMin ||
           oldPredictionStatus != newPredictionStatus;
 
-      // Verificación idempotente antes de restricciones históricas.
       final existingEvent = await transaction.get(eventRef);
 
       if (existingEvent.exists) {
@@ -357,12 +462,10 @@ class ResponsibilityService {
         );
       }
 
-      // Sin evento previo. Si no hay cambios, no escribir.
       if (!dueAtChanged && !predictionChanged) {
         return CorrectDatesResult.noChange();
       }
 
-      // Corrección exclusiva de dueAt, permitida incluso después del inicio.
       if (dueAtChanged && !predictionChanged) {
         if (!newDueAtMin.isAfter(nowMinute)) {
           throw StateError('La entrega debe estar en el futuro.');
@@ -388,7 +491,6 @@ class ResponsibilityService {
         );
       }
 
-      // Si predictionChanged == true, aplicar restricciones históricas.
       if (data['status'] != ResponsibilityStatus.pending.name) {
         throw StateError(
             'Solo se pueden corregir fechas de responsabilidades pendientes.');
@@ -462,6 +564,52 @@ class ResponsibilityService {
     });
   }
 
+  Future<DiscardResponsibilityResult> discardResponsibility({
+    required String responsibilityId,
+  }) async {
+    final docRef = _responsibilities.doc(responsibilityId);
+    final notYetRef = _predictionEvents.doc('not_yet_$responsibilityId');
+
+    return _db.runTransaction((transaction) async {
+      final snap = await transaction.get(docRef);
+
+      if (!snap.exists) {
+        throw StateError('Responsabilidad no encontrada: $responsibilityId');
+      }
+
+      final data = snap.data()!;
+
+      if (data['userId'] != _uid) {
+        throw StateError(
+            'La responsabilidad no pertenece al usuario autenticado.');
+      }
+
+      final status = data['status'];
+      final startedAt = data['startedAt'];
+
+      if (status == ResponsibilityStatus.discarded.name) {
+        return DiscardResponsibilityResult.alreadyDiscarded;
+      }
+
+      if (status != ResponsibilityStatus.pending.name ||
+          startedAt != null) {
+        throw const ResponsibilityHasStartedException();
+      }
+
+      final notYetSnap = await transaction.get(notYetRef);
+
+      if (notYetSnap.exists) {
+        throw const ResponsibilityHasEvidenceException();
+      }
+
+      transaction.update(docRef, {
+        'status': ResponsibilityStatus.discarded.name,
+      });
+
+      return DiscardResponsibilityResult.discarded;
+    });
+  }
+
   Future<void> recordNotYetResponse({
     required String responsibilityId,
   }) async {
@@ -482,6 +630,11 @@ class ResponsibilityService {
       if (responsibilityData['userId'] != _uid) {
         throw StateError(
             'La responsabilidad no pertenece al usuario autenticado.');
+      }
+
+      if (responsibilityData['status'] ==
+          ResponsibilityStatus.discarded.name) {
+        throw const DiscardedResponsibilityException();
       }
 
       final existingEvent = await transaction.get(eventRef);

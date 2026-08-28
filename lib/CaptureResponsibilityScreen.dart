@@ -6,9 +6,6 @@ import 'ResponsibilityService.dart';
 import 'VerificationNotificationService.dart';
 import 'AppColors.dart';
 
-/// Predicción de inicio: opciones simples, tal como se definió en la spec.
-/// "Todavía no lo sé" deja predictedStartAt = null explícitamente, nunca
-/// se asume "hoy" por defecto.
 enum _StartGuess { today, tomorrow, pickDate, unknown }
 
 class CaptureResponsibilityScreen extends StatefulWidget {
@@ -35,6 +32,18 @@ class _CaptureResponsibilityScreenState
 
   bool _isSaving = false;
 
+  bool get _todayChoiceEnabled {
+    final now = DateTime.now();
+    final todayAtSeven = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      19,
+    );
+
+    return now.isBefore(todayAtSeven);
+  }
+
   @override
   void dispose() {
     _subjectController.dispose();
@@ -49,8 +58,7 @@ class _CaptureResponsibilityScreenState
         return DateTime(now.year, now.month, now.day, 19);
       case _StartGuess.tomorrow:
         final tomorrow = DateTime.now().add(const Duration(days: 1));
-        return DateTime(
-            tomorrow.year, tomorrow.month, tomorrow.day, 19);
+        return DateTime(tomorrow.year, tomorrow.month, tomorrow.day, 19);
       case _StartGuess.pickDate:
         return _customStartDate;
       case _StartGuess.unknown:
@@ -59,7 +67,13 @@ class _CaptureResponsibilityScreenState
     }
   }
 
+  Future<void> _unfocusAndWait() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+
   Future<void> _pickDueDate() async {
+    await _unfocusAndWait();
     final date = await showDatePicker(
       context: context,
       initialDate: _dueAt,
@@ -67,6 +81,8 @@ class _CaptureResponsibilityScreenState
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
     if (date == null || !mounted) return;
+
+    await _unfocusAndWait();
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(_dueAt),
@@ -79,6 +95,7 @@ class _CaptureResponsibilityScreenState
   }
 
   Future<void> _pickCustomStartDate() async {
+    await _unfocusAndWait();
     final date = await showDatePicker(
       context: context,
       initialDate: DateTime.now(),
@@ -86,6 +103,8 @@ class _CaptureResponsibilityScreenState
       lastDate: _dueAt,
     );
     if (date == null || !mounted) return;
+
+    await _unfocusAndWait();
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.now(),
@@ -99,9 +118,31 @@ class _CaptureResponsibilityScreenState
   }
 
   Future<void> _save() async {
+    final predictedStart = _resolvedPredictedStart;
+
+    if (predictedStart != null) {
+      if (!predictedStart.isAfter(DateTime.now())) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('La predicción debe estar en el futuro.'),
+          ),
+        );
+        return;
+      }
+
+      if (!predictedStart.isBefore(_dueAt)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('La predicción debe ser anterior a la entrega.'),
+          ),
+        );
+        return;
+      }
+    }
+
     setState(() => _isSaving = true);
+
     try {
-      final predictedStart = _resolvedPredictedStart;
       final responsibility = await _service.createResponsibility(
         type: _type,
         subject: _subjectController.text.trim().isEmpty
@@ -263,16 +304,34 @@ class _CaptureResponsibilityScreenState
                 size: 14,
               ),
             ),
+            const SizedBox(height: 8),
+            Text(
+              'Esta decisión quedará registrada. Solo podrás corregirla '
+                  'antes de que forme parte de tu evidencia.',
+              style: AppTypography.body(
+                color: palette.textMuted,
+                size: 13,
+              ),
+            ),
             const SizedBox(height: 12),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
-                _buildChoiceChip(
-                  label: 'Hoy',
-                  selected: _startGuess == _StartGuess.today,
-                  onSelected: () =>
-                      setState(() => _startGuess = _StartGuess.today),
+                Tooltip(
+                  message: _todayChoiceEnabled
+                      ? 'Hoy a las 7:00 p. m.'
+                      : 'No disponible después de las 7:00 p. m.',
+                  child: _buildChoiceChip(
+                    label: 'Hoy',
+                    selected: _startGuess == _StartGuess.today,
+                    enabled: _todayChoiceEnabled,
+                    onSelected: () {
+                      setState(() {
+                        _startGuess = _StartGuess.today;
+                      });
+                    },
+                  ),
                 ),
                 _buildChoiceChip(
                   label: 'Mañana',
@@ -316,7 +375,7 @@ class _CaptureResponsibilityScreenState
                 ),
               ),
               child: Text(
-                'REGISTRAR RESPONSABILIDAD',
+                'Registrar',
                 style: AppTypography.button(
                   color: palette.onPrimaryAction,
                   size: 16,
@@ -343,21 +402,35 @@ class _CaptureResponsibilityScreenState
     required String label,
     required bool selected,
     required VoidCallback onSelected,
+    bool enabled = true,
   }) {
     final palette = AppPalette.of(context);
-    return ChoiceChip(
-      label: Text(
-        label,
-        style: AppTypography.label(
-          color: selected ? palette.onPrimaryAction : palette.textPrimary,
+
+    return Semantics(
+      enabled: enabled,
+      button: true,
+      label: label,
+      child: ChoiceChip(
+        label: Text(
+          label,
+          style: AppTypography.label(
+            color: selected
+                ? palette.onPrimaryAction
+                : enabled
+                ? palette.textPrimary
+                : palette.textMuted,
+          ),
         ),
+        selected: selected,
+        selectedColor: palette.primaryAction,
+        backgroundColor: palette.surface,
+        disabledColor: palette.surface,
+        side: BorderSide(color: palette.border),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+        onSelected: enabled ? (_) => onSelected() : null,
       ),
-      selected: selected,
-      selectedColor: palette.primaryAction,
-      backgroundColor: palette.surface,
-      side: BorderSide(color: palette.border),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      onSelected: (_) => onSelected(),
     );
   }
 

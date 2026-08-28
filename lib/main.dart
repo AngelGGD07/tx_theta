@@ -52,31 +52,67 @@ Future<void> main() async {
 }
 
 Future<void> _handleNotificationAction(
-    String responsibilityId, String actionId) async {
+    String responsibilityId,
+    String actionId,
+    ) async {
   if (responsibilityId.isEmpty) return;
 
-  await _responsibilityService.logNotificationEvent(
-    responsibilityId: responsibilityId,
-    type: 'notification_action_received',
-    actionSelected: actionId,
-  );
+  try {
+    await _responsibilityService.ensureResponsibilityActive(
+      responsibilityId,
+    );
+  } on DiscardedResponsibilityException {
+    _showDiscardedMessage();
+    return;
+  } catch (e) {
+    debugPrint('Notification action precheck error: $e');
+    return;
+  }
 
-  await _analytics.logEvent(
-    AnalyticsEvents.notificationActionReceived,
-    parameters: {
-      AnalyticsParams.responsibilityId: responsibilityId,
-      AnalyticsParams.actionId: actionId,
-    },
-  );
+  try {
+    await _responsibilityService.logNotificationEvent(
+      responsibilityId: responsibilityId,
+      type: 'notification_action_received',
+      actionSelected: actionId,
+    );
+
+    await _analytics.logEvent(
+      AnalyticsEvents.notificationActionReceived,
+      parameters: {
+        AnalyticsParams.responsibilityId: responsibilityId,
+        AnalyticsParams.actionId: actionId,
+      },
+    );
+
+    await _analytics.logEvent(
+      AnalyticsEvents.notificationActionSelected,
+      parameters: {
+        AnalyticsParams.responsibilityId: responsibilityId,
+        AnalyticsParams.actionId: actionId,
+      },
+    );
+  } catch (e) {
+    debugPrint('Telemetry error for notification action: $e');
+  }
 
   switch (actionId) {
     case VerificationAction.starting:
-      await _responsibilityService.markStartedIfNotAlready(
-        responsibilityId: responsibilityId,
-        actualStartAt: DateTime.now(),
-        source: StartSource.reminderLive,
-      );
-      _showGlobalUndo(responsibilityId);
+      try {
+        final didStart =
+        await _responsibilityService.markStartedIfNotAlready(
+          responsibilityId: responsibilityId,
+          actualStartAt: DateTime.now(),
+          source: StartSource.reminderLive,
+        );
+
+        if (didStart) {
+          _showGlobalUndo(responsibilityId);
+        }
+      } on DiscardedResponsibilityException {
+        _showDiscardedMessage();
+      } catch (e) {
+        debugPrint('Start-now action error: $e');
+      }
       break;
 
     case VerificationAction.alreadyStarted:
@@ -87,6 +123,14 @@ Future<void> _handleNotificationAction(
       );
       break;
   }
+}
+
+void _showDiscardedMessage() {
+  rootScaffoldMessengerKey.currentState?.showSnackBar(
+    const SnackBar(
+      content: Text('Esta observación ya fue descartada.'),
+    ),
+  );
 }
 
 void _showGlobalUndo(String responsibilityId) {
