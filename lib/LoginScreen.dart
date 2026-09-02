@@ -6,6 +6,7 @@ import 'package:BiPi/AppColors.dart';
 import 'package:BiPi/GoogleSignInButton.dart';
 import 'package:BiPi/MicrosoftSignInButton.dart';
 import 'package:BiPi/ThemeToggleButton.dart';
+import 'package:BiPi/ForgotPasswordScreen.dart';
 
 /// -----------------------------------------------------------------------
 /// Idiomas soportados. Se puede ampliar fácilmente agregando más entradas.
@@ -51,6 +52,7 @@ class _Strings {
       'error_account_exists_different_credential':
       'Ya existe una cuenta con este correo. Inicia sesión con el método que utilizaste originalmente.',
       'error_user_disabled': 'Esta cuenta fue deshabilitada.',
+      'forgot_password': '¿Olvidaste tu contraseña?',
     },
     AppLanguage.en: {
       'tagline': 'Best Planner',
@@ -89,6 +91,7 @@ class _Strings {
       'error_account_exists_different_credential':
       'An account already exists with this email. Sign in with the method you originally used.',
       'error_user_disabled': 'This account has been disabled.',
+      'forgot_password': 'Forgot your password?',
     },
   };
 
@@ -120,6 +123,10 @@ class _LoginScreenState extends State<LoginScreen>
   bool _isLoading = false;
   bool _obscurePassword = true;
   AppLanguage _lang = AppLanguage.es;
+
+  bool _isMicrosoftAuthInProgress = false;
+  bool _microsoftFlowLeftApp = false;
+  int _microsoftAttemptId = 0;
 
   String _t(String key) => _Strings.t(_lang, key);
 
@@ -251,7 +258,6 @@ class _LoginScreenState extends State<LoginScreen>
         final refreshedUser = _auth.currentUser;
 
         if (refreshedUser != null && !refreshedUser.emailVerified) {
-          // No mostramos bienvenida. AuthGate mostrará verificación.
           return;
         }
 
@@ -271,13 +277,12 @@ class _LoginScreenState extends State<LoginScreen>
           return;
         }
 
-        await FirebaseAuth.instance.setLanguageCode('es');
+        await FirebaseAuth.instance.setLanguageCode(
+          _lang == AppLanguage.en ? 'en' : 'es',
+        );
         await user.sendEmailVerification();
 
         if (!mounted) return;
-
-        // No _showMessage de cuenta creada.
-        // AuthGate mostrará EmailVerificationScreen.
       }
     } catch (e) {
       debugPrint('Auth error: $e');
@@ -367,9 +372,17 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
-  bool _isMicrosoftAuthInProgress = false;
-  bool _microsoftFlowLeftApp = false;
-  int _microsoftAttemptId = 0;
+  void _openForgotPassword() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ForgotPasswordScreen(
+          initialEmail: _emailController.text.trim(),
+          useEnglish: _lang == AppLanguage.en,
+        ),
+      ),
+    );
+  }
 
   void _showMessage(String message) {
     final palette = AppPalette.of(context);
@@ -607,18 +620,40 @@ class _LoginScreenState extends State<LoginScreen>
               onPressed: _isLoading ? null : _signInWithMicrosoft,
               label: _t('microsoft'),
             ),
-            const SizedBox(height: 16),
-            Center(
-              child: TextButton(
-                onPressed: _isLoading
-                    ? null
-                    : () => setState(() => _isLogin = !_isLogin),
-                child: Text(
-                  _isLogin ? _t('no_account') : _t('have_account'),
-                  style: AppTypography.label(
-                      color: palette.textPrimary, size: 14),
+            const SizedBox(height: 12),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextButton(
+                  onPressed: _isLoading
+                      ? null
+                      : () => setState(() => _isLogin = !_isLogin),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  child: Text(
+                    _isLogin ? _t('no_account') : _t('have_account'),
+                    style: AppTypography.label(
+                      color: palette.textPrimary,
+                      size: 14,
+                    ),
+                  ),
                 ),
-              ),
+                if (_isLogin)
+                  TextButton(
+                    onPressed: _isLoading ? null : _openForgotPassword,
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    child: Text(
+                      _t('forgot_password'),
+                      style: AppTypography.label(
+                        color: palette.textPrimary,
+                        size: 13,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ],
         ),
