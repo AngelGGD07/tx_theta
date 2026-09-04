@@ -6,7 +6,11 @@ import 'ResponsibilityService.dart';
 import 'VerificationNotificationService.dart';
 import 'AppColors.dart';
 
-enum _StartGuess { today, tomorrow, pickDate, unknown }
+enum _StartGuess {
+  tomorrow,
+  pickDate,
+  unknown,
+}
 
 class CaptureResponsibilityScreen extends StatefulWidget {
   const CaptureResponsibilityScreen({super.key});
@@ -29,20 +33,9 @@ class _CaptureResponsibilityScreenState
   DateTime _dueAt = DateTime.now().add(const Duration(days: 3));
   _StartGuess? _startGuess;
   DateTime? _customStartDate;
+  DateTime? _tomorrowStartDate;
 
   bool _isSaving = false;
-
-  bool get _todayChoiceEnabled {
-    final now = DateTime.now();
-    final todayAtSeven = DateTime(
-      now.year,
-      now.month,
-      now.day,
-      19,
-    );
-
-    return now.isBefore(todayAtSeven);
-  }
 
   @override
   void dispose() {
@@ -53,12 +46,8 @@ class _CaptureResponsibilityScreenState
 
   DateTime? get _resolvedPredictedStart {
     switch (_startGuess) {
-      case _StartGuess.today:
-        final now = DateTime.now();
-        return DateTime(now.year, now.month, now.day, 19);
       case _StartGuess.tomorrow:
-        final tomorrow = DateTime.now().add(const Duration(days: 1));
-        return DateTime(tomorrow.year, tomorrow.month, tomorrow.day, 19);
+        return _tomorrowStartDate;
       case _StartGuess.pickDate:
         return _customStartDate;
       case _StartGuess.unknown:
@@ -74,6 +63,8 @@ class _CaptureResponsibilityScreenState
 
   Future<void> _pickDueDate() async {
     await _unfocusAndWait();
+    if (!mounted) return;
+
     final date = await showDatePicker(
       context: context,
       initialDate: _dueAt,
@@ -83,41 +74,301 @@ class _CaptureResponsibilityScreenState
     if (date == null || !mounted) return;
 
     await _unfocusAndWait();
+    if (!mounted) return;
+
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(_dueAt),
     );
     if (time == null || !mounted) return;
+
+    final selectedDueAt = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+
+    if (!selectedDueAt.isAfter(DateTime.now())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('La entrega debe estar en el futuro.'),
+        ),
+      );
+      return;
+    }
+
+    final existingPrediction = _resolvedPredictedStart;
+
     setState(() {
-      _dueAt =
-          DateTime(date.year, date.month, date.day, time.hour, time.minute);
+      _dueAt = selectedDueAt;
+    });
+
+    if (existingPrediction != null &&
+        !existingPrediction.isBefore(_dueAt)) {
+      setState(() {
+        _startGuess = null;
+        _tomorrowStartDate = null;
+        _customStartDate = null;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Cambiamos la entrega. Selecciona nuevamente cuándo crees que empezarás.',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _pickTomorrowStartTime() async {
+    await _unfocusAndWait();
+    if (!mounted) return;
+
+    final now = DateTime.now();
+    final tomorrowDate = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).add(const Duration(days: 1));
+
+    if (_dueAt.isBefore(tomorrowDate) ||
+        _dueAt.isAtSameMomentAs(tomorrowDate)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'La entrega ocurre antes de mañana. Usa Elegir fecha para seleccionar una hora anterior.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    TimeOfDay initialTime;
+
+    if (_tomorrowStartDate != null) {
+      initialTime = TimeOfDay.fromDateTime(_tomorrowStartDate!);
+    } else {
+      final defaultTomorrowStart = DateTime(
+        tomorrowDate.year,
+        tomorrowDate.month,
+        tomorrowDate.day,
+        9,
+        0,
+      );
+
+      if (defaultTomorrowStart.isBefore(_dueAt)) {
+        initialTime = const TimeOfDay(hour: 9, minute: 0);
+      } else {
+        final suggested = _dueAt.subtract(const Duration(minutes: 1));
+
+        final suggestedTomorrow = DateTime(
+          tomorrowDate.year,
+          tomorrowDate.month,
+          tomorrowDate.day,
+          suggested.hour,
+          suggested.minute,
+        );
+
+        if (suggestedTomorrow.isAfter(now) &&
+            suggestedTomorrow.isBefore(_dueAt)) {
+          initialTime = TimeOfDay.fromDateTime(suggestedTomorrow);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'No hay una hora válida para mañana. Usa Elegir fecha.',
+              ),
+            ),
+          );
+          return;
+        }
+      }
+    }
+
+    final time = await showTimePicker(
+      context: context,
+      initialTime: initialTime,
+    );
+    if (time == null || !mounted) return;
+
+    final selectedStart = DateTime(
+      tomorrowDate.year,
+      tomorrowDate.month,
+      tomorrowDate.day,
+      time.hour,
+      time.minute,
+    );
+
+    if (!selectedStart.isAfter(DateTime.now())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selecciona una fecha y hora futuras.'),
+        ),
+      );
+      return;
+    }
+
+    if (!selectedStart.isBefore(_dueAt)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('La predicción debe ser anterior a la entrega.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _tomorrowStartDate = selectedStart;
+      _startGuess = _StartGuess.tomorrow;
     });
   }
 
   Future<void> _pickCustomStartDate() async {
     await _unfocusAndWait();
+    if (!mounted) return;
+
+    final now = DateTime.now();
+    final today = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    );
+
+    final dueDate = DateTime(
+      _dueAt.year,
+      _dueAt.month,
+      _dueAt.day,
+    );
+
+    if (dueDate.isBefore(today)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Primero elige una fecha de entrega futura.'),
+        ),
+      );
+      return;
+    }
+
     final date = await showDatePicker(
       context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime.now().subtract(const Duration(days: 1)),
-      lastDate: _dueAt,
+      initialDate: today,
+      firstDate: today,
+      lastDate: dueDate,
     );
     if (date == null || !mounted) return;
 
+    final selectedDay = DateTime(
+      date.year,
+      date.month,
+      date.day,
+    );
+
+    TimeOfDay initialTime;
+
+    if (_customStartDate != null &&
+        DateTime(
+          _customStartDate!.year,
+          _customStartDate!.month,
+          _customStartDate!.day,
+        ) ==
+            selectedDay) {
+      initialTime = TimeOfDay.fromDateTime(_customStartDate!);
+    } else if (selectedDay == today) {
+      final suggested = DateTime(
+        now.year,
+        now.month,
+        now.day,
+        now.hour,
+        now.minute,
+      ).add(const Duration(minutes: 2));
+
+      DateTime? initialDateTime;
+
+      if (suggested.day == today.day &&
+          suggested.isAfter(now) &&
+          suggested.isBefore(_dueAt)) {
+        initialDateTime = suggested;
+      } else {
+        final lastPossibleStart = _dueAt.subtract(const Duration(minutes: 1));
+        if (lastPossibleStart.day == today.day &&
+            lastPossibleStart.isAfter(now) &&
+            lastPossibleStart.isBefore(_dueAt)) {
+          initialDateTime = lastPossibleStart;
+        }
+      }
+
+      if (initialDateTime == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Ya no queda una hora válida para hoy. Elige otra fecha.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      initialTime = TimeOfDay.fromDateTime(initialDateTime);
+    } else {
+      initialTime = const TimeOfDay(hour: 9, minute: 0);
+    }
+
     await _unfocusAndWait();
+    if (!mounted) return;
+
     final time = await showTimePicker(
       context: context,
-      initialTime: TimeOfDay.now(),
+      initialTime: initialTime,
     );
     if (time == null || !mounted) return;
+
+    final selectedStart = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+
+    if (!selectedStart.isAfter(DateTime.now())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selecciona una fecha y hora futuras.'),
+        ),
+      );
+      return;
+    }
+
+    if (!selectedStart.isBefore(_dueAt)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('La predicción debe ser anterior a la entrega.'),
+        ),
+      );
+      return;
+    }
+
     setState(() {
-      _customStartDate =
-          DateTime(date.year, date.month, date.day, time.hour, time.minute);
+      _customStartDate = selectedStart;
       _startGuess = _StartGuess.pickDate;
     });
   }
 
   Future<void> _save() async {
+    if (_isSaving) return;
+
+    if (!_dueAt.isAfter(DateTime.now())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('La entrega debe estar en el futuro.'),
+        ),
+      );
+      return;
+    }
+
     final predictedStart = _resolvedPredictedStart;
 
     if (predictedStart != null) {
@@ -216,6 +467,15 @@ class _CaptureResponsibilityScreenState
     }
   }
 
+  String _formatTimeOnly(DateTime dt) {
+    final hour = dt.hour == 0
+        ? 12
+        : (dt.hour > 12 ? dt.hour - 12 : dt.hour);
+    final period = dt.hour >= 12 ? 'p.m.' : 'a.m.';
+    final minute = dt.minute.toString().padLeft(2, '0');
+    return '$hour:$minute $period';
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
@@ -225,6 +485,10 @@ class _CaptureResponsibilityScreenState
     final predictionTitle = (displayName != null && displayName.isNotEmpty)
         ? '$displayName, ¿cuándo crees que empezarás?'
         : '¿Cuándo crees que empezarás?';
+
+    final tomorrowLabel = _tomorrowStartDate == null
+        ? 'Mañana'
+        : 'Mañana, ${_formatTimeOnly(_tomorrowStartDate!)}';
 
     return Scaffold(
       appBar: AppBar(
@@ -298,7 +562,7 @@ class _CaptureResponsibilityScreenState
             _buildSectionTitle(predictionTitle, palette),
             const SizedBox(height: 4),
             Text(
-              'No cuándo deberías. Cuándo crees que realmente lo harás.',
+              'Elige una hora realista. La compararemos con la hora en que realmente empieces.',
               style: AppTypography.body(
                 color: palette.textSecondary,
                 size: 14,
@@ -306,8 +570,7 @@ class _CaptureResponsibilityScreenState
             ),
             const SizedBox(height: 8),
             Text(
-              'Esta decisión quedará registrada. Solo podrás corregirla '
-                  'antes de que forme parte de tu evidencia.',
+              'Podrás cambiarla antes de la hora elegida, siempre que aún no hayas respondido ni comenzado.',
               style: AppTypography.body(
                 color: palette.textMuted,
                 size: 13,
@@ -318,26 +581,10 @@ class _CaptureResponsibilityScreenState
               spacing: 8,
               runSpacing: 8,
               children: [
-                Tooltip(
-                  message: _todayChoiceEnabled
-                      ? 'Hoy a las 7:00 p. m.'
-                      : 'No disponible después de las 7:00 p. m.',
-                  child: _buildChoiceChip(
-                    label: 'Hoy',
-                    selected: _startGuess == _StartGuess.today,
-                    enabled: _todayChoiceEnabled,
-                    onSelected: () {
-                      setState(() {
-                        _startGuess = _StartGuess.today;
-                      });
-                    },
-                  ),
-                ),
                 _buildChoiceChip(
-                  label: 'Mañana',
+                  label: tomorrowLabel,
                   selected: _startGuess == _StartGuess.tomorrow,
-                  onSelected: () =>
-                      setState(() => _startGuess = _StartGuess.tomorrow),
+                  onSelected: () => _pickTomorrowStartTime(),
                 ),
                 _buildChoiceChip(
                   label: _customStartDate != null

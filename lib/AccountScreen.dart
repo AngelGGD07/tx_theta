@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'AppColors.dart';
+import 'ConsentDocumentScreen.dart';
+import 'ConsentService.dart';
+import 'PilotErrorReportScreen.dart';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -14,6 +18,7 @@ class _AccountScreenState extends State<AccountScreen> {
   bool _isResettingPassword = false;
   bool _isSigningOut = false;
   bool _isUpdatingName = false;
+  bool _isLoadingConsent = false;
 
   User? get _user => FirebaseAuth.instance.currentUser;
 
@@ -32,7 +37,10 @@ class _AccountScreenState extends State<AccountScreen> {
   );
 
   bool get _isBusy =>
-      _isUpdatingName || _isResettingPassword || _isSigningOut;
+      _isUpdatingName ||
+          _isResettingPassword ||
+          _isSigningOut ||
+          _isLoadingConsent;
 
   Future<void> _resetPassword() async {
     if (_isBusy) return;
@@ -54,7 +62,7 @@ class _AccountScreenState extends State<AccountScreen> {
       if (!mounted) return;
       _showMessage('Te enviamos un enlace para restablecer tu contraseña.');
     } catch (e) {
-      debugPrint('Reset password error: $e');
+      debugPrint('Reset password error: ${e.runtimeType}');
       if (!mounted) return;
       _showMessage(
         'No pudimos enviar el enlace. Revisa tu conexión e inténtalo nuevamente.',
@@ -71,9 +79,8 @@ class _AccountScreenState extends State<AccountScreen> {
 
     try {
       await FirebaseAuth.instance.signOut();
-      // AuthGate reaccionará a authStateChanges y mostrará Login.
     } catch (e) {
-      debugPrint('Sign out error: $e');
+      debugPrint('Sign out error: ${e.runtimeType}');
       if (!mounted) return;
       setState(() => _isSigningOut = false);
       _showMessage('No se pudo cerrar sesión. Inténtalo nuevamente.');
@@ -122,7 +129,7 @@ class _AccountScreenState extends State<AccountScreen> {
         result.remove ? 'Nombre eliminado de BiPi.' : 'Nombre actualizado.',
       );
     } catch (e) {
-      debugPrint('Update display name error: $e');
+      debugPrint('Update display name error: ${e.runtimeType}');
       if (!mounted) return;
       _showMessage(
         'No pudimos actualizar el nombre. Revisa tu conexión e inténtalo nuevamente.',
@@ -130,6 +137,115 @@ class _AccountScreenState extends State<AccountScreen> {
     } finally {
       if (mounted) setState(() => _isUpdatingName = false);
     }
+  }
+
+  Future<String?> _loadConsentVersion() async {
+    final user = _user;
+    if (user == null) return null;
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection(ConsentService.collectionName)
+          .doc(user.uid)
+          .get();
+
+      if (!snapshot.exists) return null;
+
+      return snapshot.data()?['consentVersion'] as String?;
+    } catch (e) {
+      debugPrint('Load consent version error: ${e.runtimeType}');
+      return null;
+    }
+  }
+
+  Future<bool?> _showConsentVersionError() async {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) {
+        final palette = AppPalette.of(context);
+
+        return AlertDialog(
+          backgroundColor: palette.surface,
+          title: Text(
+            'No pudimos cargar la versión de tu consentimiento.',
+            style: AppTypography.screenTitle(
+              color: palette.textPrimary,
+              size: 20,
+            ),
+          ),
+          content: Text(
+            'Inténtalo nuevamente. Si el problema continúa, contacta al responsable del piloto.',
+            style: AppTypography.body(color: palette.textPrimary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(
+                'VOLVER',
+                style: AppTypography.button(
+                  color: palette.textPrimary,
+                  size: 14,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(
+                'REINTENTAR',
+                style: AppTypography.button(
+                  color: palette.primaryAction,
+                  size: 14,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _openConsentDocument() async {
+    if (_isBusy) return;
+
+    setState(() => _isLoadingConsent = true);
+
+    String? version;
+
+    try {
+      version = await _loadConsentVersion();
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingConsent = false);
+      }
+    }
+
+    if (!mounted) return;
+
+    if (version == null || version.isEmpty) {
+      final retry = await _showConsentVersionError();
+
+      if (retry == true && mounted) {
+        await _openConsentDocument();
+      }
+
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => ConsentDocumentScreen(
+          consentVersion: version!,
+        ),
+      ),
+    );
+  }
+
+  void _openProblemReport() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const PilotErrorReportScreen(),
+      ),
+    );
   }
 
   void _showMessage(String message) {
@@ -274,6 +390,58 @@ class _AccountScreenState extends State<AccountScreen> {
                 ),
               )
                   : const Text('CERRAR SESIÓN'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Center(
+            child: TextButton.icon(
+              onPressed: _isBusy ? null : _openProblemReport,
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                foregroundColor: palette.textPrimary,
+              ),
+              icon: Icon(
+                Icons.report_problem_outlined,
+                size: 16,
+                color: palette.textPrimary,
+              ),
+              label: Text(
+                'Reportar un problema',
+                style: AppTypography.label(
+                  color: palette.textPrimary,
+                  size: 13,
+                ),
+              ),
+            ),
+          ),
+          Center(
+            child: TextButton.icon(
+              onPressed: _isBusy ? null : _openConsentDocument,
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                foregroundColor: palette.textPrimary,
+              ),
+              icon: _isLoadingConsent
+                  ? SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: palette.textPrimary,
+                ),
+              )
+                  : Icon(
+                Icons.description_outlined,
+                size: 16,
+                color: palette.textPrimary,
+              ),
+              label: Text(
+                'Consentimiento del piloto',
+                style: AppTypography.label(
+                  color: palette.textPrimary,
+                  size: 13,
+                ),
+              ),
             ),
           ),
         ],

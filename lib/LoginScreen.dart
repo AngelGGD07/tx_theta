@@ -7,10 +7,8 @@ import 'package:BiPi/GoogleSignInButton.dart';
 import 'package:BiPi/MicrosoftSignInButton.dart';
 import 'package:BiPi/ThemeToggleButton.dart';
 import 'package:BiPi/ForgotPasswordScreen.dart';
+import 'package:BiPi/PilotErrorReportScreen.dart';
 
-/// -----------------------------------------------------------------------
-/// Idiomas soportados. Se puede ampliar fácilmente agregando más entradas.
-/// -----------------------------------------------------------------------
 enum AppLanguage { es, en }
 
 class _Strings {
@@ -53,6 +51,7 @@ class _Strings {
       'Ya existe una cuenta con este correo. Inicia sesión con el método que utilizaste originalmente.',
       'error_user_disabled': 'Esta cuenta fue deshabilitada.',
       'forgot_password': '¿Olvidaste tu contraseña?',
+      'report_problem': 'Reportar un problema',
     },
     AppLanguage.en: {
       'tagline': 'Best Planner',
@@ -92,6 +91,7 @@ class _Strings {
       'An account already exists with this email. Sign in with the method you originally used.',
       'error_user_disabled': 'This account has been disabled.',
       'forgot_password': 'Forgot your password?',
+      'report_problem': 'Report a problem',
     },
   };
 
@@ -99,9 +99,6 @@ class _Strings {
       _values[lang]?[key] ?? key;
 }
 
-/// -----------------------------------------------------------------------
-/// LoginScreen
-/// -----------------------------------------------------------------------
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -146,9 +143,7 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // No se requiere manejo especial para el flujo de verificación.
-  }
+  void didChangeAppLifecycleState(AppLifecycleState state) {}
 
   String _friendlyAuthError(Object error) {
     if (error is TimeoutException) {
@@ -222,8 +217,6 @@ class _LoginScreenState extends State<LoginScreen>
 
     return null;
   }
-
-  // --------------------------- AUTENTICACIÓN ---------------------------
 
   Future<void> _authenticate() async {
     if (_isLoading) return;
@@ -384,6 +377,17 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
+  void _openProblemReport() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const PilotErrorReportScreen(
+          initialArea: 'Acceso y cuenta',
+        ),
+      ),
+    );
+  }
+
   void _showMessage(String message) {
     final palette = AppPalette.of(context);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -401,8 +405,6 @@ class _LoginScreenState extends State<LoginScreen>
       _lang = _lang == AppLanguage.es ? AppLanguage.en : AppLanguage.es;
     });
   }
-
-  // ------------------------------ BUILD --------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -460,50 +462,9 @@ class _LoginScreenState extends State<LoginScreen>
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.08),
-                  blurRadius: 14,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Image.asset(
-              'assets/logo.png',
-              width: 60,
-              height: 60,
-              fit: BoxFit.contain,
-              errorBuilder: (context, error, stackTrace) => Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  color: AppColors.amber,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(Icons.bolt_rounded,
-                    color: Colors.white, size: 32),
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('BiPi',
-                  style: AppTypography.logo(
-                      color: palette.textPrimary, size: 28)),
-              const SizedBox(height: 2),
-              Text(_t('tagline'),
-                  style: AppTypography.tagline(
-                      color: palette.textMuted, size: 13)),
-            ],
-          ),
+          Text('BiPi',
+              style: AppTypography.logo(
+                  color: palette.textPrimary, size: 28)),
         ],
       ),
     );
@@ -653,6 +614,25 @@ class _LoginScreenState extends State<LoginScreen>
                       ),
                     ),
                   ),
+                TextButton.icon(
+                  onPressed: _isLoading ? null : _openProblemReport,
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: palette.textPrimary,
+                  ),
+                  icon: Icon(
+                    Icons.report_problem_outlined,
+                    size: 16,
+                    color: palette.textPrimary,
+                  ),
+                  label: Text(
+                    _t('report_problem'),
+                    style: AppTypography.label(
+                      color: palette.textPrimary,
+                      size: 13,
+                    ),
+                  ),
+                ),
               ],
             ),
           ],
