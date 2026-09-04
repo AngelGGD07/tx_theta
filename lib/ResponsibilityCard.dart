@@ -29,12 +29,14 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
   bool _isMarkingStarted = false;
   bool _isSavingDetails = false;
   bool _isSavingDates = false;
+  bool _isDiscarding = false;
 
   String? _pendingCorrectionId;
   DateTime? _pendingNewDueAt;
   DateTime? _pendingNewPredictedStartAt;
 
-  bool get _isBusy => _isMarkingStarted || _isSavingDetails || _isSavingDates;
+  bool get _isBusy =>
+      _isMarkingStarted || _isSavingDetails || _isSavingDates || _isDiscarding;
 
   DateTime _normalizeToMinute(DateTime dt) =>
       DateTime(dt.year, dt.month, dt.day, dt.hour, dt.minute);
@@ -66,6 +68,8 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
           ),
         ),
       );
+    } on DiscardedResponsibilityException {
+      if (mounted) _showMessage('Esta observación ya fue descartada.');
     } catch (e) {
       debugPrint('Error al registrar inicio: $e');
       if (!mounted) return;
@@ -85,6 +89,14 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
   }
 
   Future<void> _markStartedInThePast() async {
+    try {
+      await widget.service
+          .ensureResponsibilityActive(widget.responsibility.id);
+    } on DiscardedResponsibilityException {
+      if (mounted) _showMessage('Esta observación ya fue descartada.');
+      return;
+    }
+
     await showPastStartSelector(
       context,
       widget.responsibility.id,
@@ -94,6 +106,10 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
   }
 
   Future<void> _openMoreActions() async {
+    final canDiscard = widget.responsibility.status ==
+        ResponsibilityStatus.pending &&
+        widget.responsibility.startedAt == null;
+
     final action = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: AppPalette.of(context).surface,
@@ -111,6 +127,12 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
               title: const Text('Corregir fechas'),
               onTap: () => Navigator.of(ctx).pop('edit_dates'),
             ),
+            if (canDiscard)
+              ListTile(
+                leading: const Icon(Icons.archive_outlined),
+                title: const Text('Descartar observación'),
+                onTap: () => Navigator.of(ctx).pop('discard'),
+              ),
           ],
         ),
       ),
@@ -122,6 +144,8 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
       await _editDetails();
     } else if (action == 'edit_dates') {
       await _editDates();
+    } else if (action == 'discard') {
+      await _confirmDiscard();
     }
   }
 
@@ -317,6 +341,103 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
     }
   }
 
+  Future<void> _confirmDiscard() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        final palette = AppPalette.of(context);
+        return AlertDialog(
+          backgroundColor: palette.surface,
+          title: Text(
+            '¿Descartar esta observación?',
+            style: AppTypography.screenTitle(
+              color: palette.textPrimary,
+              size: 20,
+            ),
+          ),
+          content: Text(
+            'Desaparecerá de Inicio y dejarás de recibir su recordatorio. '
+                'La evidencia ya registrada se conservará.',
+            style: AppTypography.body(color: palette.textPrimary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(
+                'CANCELAR',
+                style: AppTypography.button(
+                  color: palette.textPrimary,
+                  size: 14,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(
+                'DESCARTAR',
+                style: AppTypography.button(
+                  color: palette.destructive,
+                  size: 14,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isDiscarding = true);
+
+    try {
+      final result = await widget.service.discardResponsibility(
+        responsibilityId: widget.responsibility.id,
+      );
+
+      if (result == DiscardResponsibilityResult.alreadyDiscarded) {
+        if (mounted) _showMessage('La observación ya estaba descartada.');
+        return;
+      }
+
+      try {
+        await _notifications.cancelVerification(widget.responsibility.id);
+        if (mounted) _showMessage('Observación descartada.');
+      } catch (e) {
+        debugPrint('Cancel notification error: $e');
+        if (mounted) {
+          _showMessage(
+            'La observación fue descartada, pero no pudimos cancelar '
+                'el recordatorio. Puedes ignorarlo si aparece.',
+          );
+        }
+      }
+    } on ResponsibilityHasStartedException {
+      if (mounted) {
+        _showMessage(
+          'Esta observación ya contiene un inicio y no puede descartarse.',
+        );
+      }
+    } on ResponsibilityHasEvidenceException {
+      if (mounted) {
+        _showMessage(
+          'Esta observación ya contiene una respuesta y no puede descartarse.',
+        );
+      }
+    } on DiscardedResponsibilityException {
+      if (mounted) _showMessage('Esta observación ya fue descartada.');
+    } catch (e) {
+      debugPrint('Discard responsibility unexpected error: $e');
+      if (mounted) {
+        _showMessage(
+          'No pudimos descartar la observación. Inténtalo nuevamente.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isDiscarding = false);
+    }
+  }
+
   void _showMessage(String message) {
     final palette = AppPalette.of(context);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -335,6 +456,7 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
     final palette = AppPalette.of(context);
     final r = widget.responsibility;
     final hasStarted = r.startedAt != null;
+    final description = r.description?.trim();
 
     if (hasStarted) {
       final confrontationKey = '${r.id}_${r.startedAt!.millisecondsSinceEpoch}';
@@ -384,10 +506,26 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
                     ).copyWith(fontWeight: FontWeight.w600),
                   ),
                 ),
+                if (description != null && description.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    description,
+                    maxLines: 2,
+                    softWrap: true,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.body(
+                      color: palette.textSecondary,
+                      size: 14,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 4),
                 if (r.predictedStartAt != null)
                   Text(
-                    'Pensabas comenzar ${_relativeDay(r.predictedStartAt!)}',
+                    'Inicio previsto: ${_compactDateTime(r.predictedStartAt!)}',
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
                     style: AppTypography.body(
                       color: palette.textSecondary,
                       size: 14,
@@ -395,7 +533,10 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
                   ),
                 const SizedBox(height: 4),
                 Text(
-                  'Entrega ${_relativeDay(r.dueAt)}',
+                  'Entrega: ${_compactDateTime(r.dueAt)}',
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
                   style: AppTypography.body(
                     color: palette.textSecondary,
                     size: 14,
@@ -425,7 +566,7 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
                               color: palette.onPrimaryAction,
                             ),
                           )
-                              : const Text('Empecé a trabajar en esto'),
+                              : const Text('Empecé a trabajar'),
                         ),
                       ),
                       IconButton(
@@ -562,6 +703,29 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
     );
   }
 
+  String _compactDateTime(DateTime dt) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final target = DateTime(dt.year, dt.month, dt.day);
+    final diff = target.difference(today).inDays;
+
+    final months = [
+      'ene', 'feb', 'mar', 'abr', 'may', 'jun',
+      'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
+    ];
+    final hour = dt.hour == 0
+        ? 12
+        : (dt.hour > 12 ? dt.hour - 12 : dt.hour);
+    final period = dt.hour >= 12 ? 'p.m.' : 'a.m.';
+    final minute = dt.minute.toString().padLeft(2, '0');
+    final time = '$hour:$minute $period';
+
+    if (diff == 0) return 'hoy, $time';
+    if (diff == 1) return 'mañana, $time';
+    if (diff == -1) return 'ayer, $time';
+    return '${dt.day} ${months[dt.month - 1]}., $time';
+  }
+
   String _formatDateTime(DateTime dt) {
     final months = [
       'ene', 'feb', 'mar', 'abr', 'may', 'jun',
@@ -588,22 +752,6 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
       case ResponsibilityType.presentation:
         return 'Exposición';
     }
-  }
-
-  String _relativeDay(DateTime dt) {
-    final now = DateTime.now();
-    final diff = DateTime(dt.year, dt.month, dt.day)
-        .difference(DateTime(now.year, now.month, now.day))
-        .inDays;
-    final hour = dt.hour == 0 ? 12 : (dt.hour > 12 ? dt.hour - 12 : dt.hour);
-    final period = dt.hour >= 12 ? 'p.m.' : 'a.m.';
-    final time = '$hour:${dt.minute.toString().padLeft(2, '0')} $period';
-
-    if (diff == 0) return 'hoy a las $time';
-    if (diff == 1) return 'mañana a las $time';
-    if (diff == -1) return 'ayer a las $time';
-    if (diff > 1) return 'en $diff días';
-    return 'hace ${-diff} días';
   }
 }
 
@@ -908,6 +1056,11 @@ class _DatesEditorSheetState extends State<_DatesEditorSheet> {
     return now.isBefore(todayAtSeven);
   }
 
+  Future<void> _unfocusAndWait() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+
   Future<void> _pickNewDueDate() async {
     final now = DateTime.now();
     final firstDate = DateTime(now.year, now.month, now.day);
@@ -931,6 +1084,7 @@ class _DatesEditorSheetState extends State<_DatesEditorSheet> {
       initialDate = candidate;
     }
 
+    await _unfocusAndWait();
     final date = await showDatePicker(
       context: context,
       initialDate: initialDate,
@@ -938,6 +1092,8 @@ class _DatesEditorSheetState extends State<_DatesEditorSheet> {
       lastDate: lastDate,
     );
     if (date == null || !mounted) return;
+
+    await _unfocusAndWait();
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(_newDueAt),
@@ -982,6 +1138,7 @@ class _DatesEditorSheetState extends State<_DatesEditorSheet> {
       initialDate = firstDate;
     }
 
+    await _unfocusAndWait();
     final date = await showDatePicker(
       context: context,
       initialDate: initialDate,
@@ -989,6 +1146,8 @@ class _DatesEditorSheetState extends State<_DatesEditorSheet> {
       lastDate: lastDate,
     );
     if (date == null || !mounted) return;
+
+    await _unfocusAndWait();
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.now(),
@@ -1253,7 +1412,6 @@ class _DatesEditorSheetState extends State<_DatesEditorSheet> {
   }
 }
 
-// === FUNCIÓN GLOBAL PARA REUTILIZAR EL MODAL ===
 Future<void> showPastStartSelector(
     BuildContext context,
     String responsibilityId,
@@ -1309,6 +1467,9 @@ Future<void> showPastStartSelector(
   if (choice is DateTime) {
     finalDate = choice;
   } else if (choice == 'custom') {
+    FocusManager.instance.primaryFocus?.unfocus();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
     final date = await showDatePicker(
       context: context,
       initialDate: now,
@@ -1316,6 +1477,9 @@ Future<void> showPastStartSelector(
       lastDate: now,
     );
     if (date == null || !context.mounted) return;
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
 
     final time = await showTimePicker(
       context: context,

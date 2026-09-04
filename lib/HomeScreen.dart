@@ -80,6 +80,8 @@ class _HomeScreenState extends State<HomeScreen> {
       if (action.actionId == VerificationAction.notYet) {
         await _processNotYet(action);
       }
+    } on DiscardedResponsibilityException {
+      _consumeDiscardedAction();
     } catch (error) {
       rootScaffoldMessengerKey.currentState
         ?..hideCurrentSnackBar()
@@ -102,6 +104,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _processAlreadyStarted(
       PendingNotificationAction action) async {
+    try {
+      await _service.ensureResponsibilityActive(action.responsibilityId);
+    } on DiscardedResponsibilityException {
+      _consumeDiscardedAction();
+      return;
+    }
+
     await _service.logNotificationEvent(
       responsibilityId: action.responsibilityId,
       type: 'notification_action_selected',
@@ -122,6 +131,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _processNotYet(
       PendingNotificationAction action) async {
+    try {
+      await _service.ensureResponsibilityActive(action.responsibilityId);
+    } on DiscardedResponsibilityException {
+      _consumeDiscardedAction();
+      return;
+    }
+
     await _service.recordNotYetResponse(
       responsibilityId: action.responsibilityId,
     );
@@ -140,6 +156,16 @@ class _HomeScreenState extends State<HomeScreen> {
             'Todavía no has comenzado. Conservamos tu predicción.',
           ),
           duration: Duration(seconds: 6),
+        ),
+      );
+  }
+
+  void _consumeDiscardedAction() {
+    rootScaffoldMessengerKey.currentState
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('Esta observación ya fue descartada.'),
         ),
       );
   }
@@ -269,7 +295,7 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'Todavía no has registrado una responsabilidad.',
+              'Pon a prueba tus decisiones',
               textAlign: TextAlign.center,
               style: AppTypography.screenTitle(
                 color: palette.textPrimary,
@@ -278,8 +304,8 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Registra una y compara cuándo crees que empezarás '
-                  'con cuándo empiezas realmente.',
+              'Registra una responsabilidad para contrastar tu intención '
+                  'con tu inicio real.',
               textAlign: TextAlign.center,
               style: AppTypography.body(
                 color: palette.textSecondary,
@@ -320,9 +346,9 @@ class _BiPiBottomBar extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: SizedBox(
-          height: 68,
+          height: 60,
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
+            padding: const EdgeInsets.symmetric(vertical: 4),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [

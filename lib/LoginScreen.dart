@@ -6,10 +6,9 @@ import 'package:BiPi/AppColors.dart';
 import 'package:BiPi/GoogleSignInButton.dart';
 import 'package:BiPi/MicrosoftSignInButton.dart';
 import 'package:BiPi/ThemeToggleButton.dart';
+import 'package:BiPi/ForgotPasswordScreen.dart';
+import 'package:BiPi/PilotErrorReportScreen.dart';
 
-/// -----------------------------------------------------------------------
-/// Idiomas soportados. Se puede ampliar fácilmente agregando más entradas.
-/// -----------------------------------------------------------------------
 enum AppLanguage { es, en }
 
 class _Strings {
@@ -50,6 +49,9 @@ class _Strings {
       'short_password': 'La contraseña debe tener al menos 6 caracteres.',
       'error_account_exists_different_credential':
       'Ya existe una cuenta con este correo. Inicia sesión con el método que utilizaste originalmente.',
+      'error_user_disabled': 'Esta cuenta fue deshabilitada.',
+      'forgot_password': '¿Olvidaste tu contraseña?',
+      'report_problem': 'Reportar un problema',
     },
     AppLanguage.en: {
       'tagline': 'Best Planner',
@@ -87,6 +89,9 @@ class _Strings {
       'short_password': 'Password must be at least 6 characters.',
       'error_account_exists_different_credential':
       'An account already exists with this email. Sign in with the method you originally used.',
+      'error_user_disabled': 'This account has been disabled.',
+      'forgot_password': 'Forgot your password?',
+      'report_problem': 'Report a problem',
     },
   };
 
@@ -94,9 +99,6 @@ class _Strings {
       _values[lang]?[key] ?? key;
 }
 
-/// -----------------------------------------------------------------------
-/// LoginScreen
-/// -----------------------------------------------------------------------
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -141,34 +143,8 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!_isMicrosoftAuthInProgress) return;
+  void didChangeAppLifecycleState(AppLifecycleState state) {}
 
-    if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused) {
-      _microsoftFlowLeftApp = true;
-    } else if (state == AppLifecycleState.resumed) {
-      if (!_microsoftFlowLeftApp) return;
-
-      final attemptId = _microsoftAttemptId;
-
-      Future<void>.delayed(const Duration(milliseconds: 1800), () {
-        if (!mounted) return;
-        if (attemptId != _microsoftAttemptId) return;
-        if (!_isMicrosoftAuthInProgress) return;
-        if (FirebaseAuth.instance.currentUser != null) return;
-
-        _isMicrosoftAuthInProgress = false;
-        _microsoftFlowLeftApp = false;
-
-        setState(() {
-          _isLoading = false;
-        });
-      });
-    }
-  }
-
-  /// Traduce errores comunes de Firebase Auth a mensajes claros.
   String _friendlyAuthError(Object error) {
     if (error is TimeoutException) {
       return _t('no_internet');
@@ -191,10 +167,10 @@ class _LoginScreenState extends State<LoginScreen>
           return _t('error_too_many_requests');
         case 'internal-error':
           return _t('error_internal');
+        case 'user-disabled':
+          return _t('error_user_disabled');
         case 'account-exists-with-different-credential':
           return _t('error_account_exists_different_credential');
-      // Cancelaciones silenciosas provisionales.
-      // La lista definitiva se ajustará según los códigos reales observados.
         case 'canceled':
         case 'cancelled':
         case 'user-cancelled':
@@ -209,7 +185,6 @@ class _LoginScreenState extends State<LoginScreen>
     return _t('generic_error');
   }
 
-  /// Valida localmente los campos de email/password.
   String? _validateFields() {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
@@ -243,8 +218,6 @@ class _LoginScreenState extends State<LoginScreen>
     return null;
   }
 
-  // --------------------------- AUTENTICACIÓN ---------------------------
-
   Future<void> _authenticate() async {
     if (_isLoading) return;
 
@@ -257,23 +230,52 @@ class _LoginScreenState extends State<LoginScreen>
     setState(() => _isLoading = true);
     try {
       if (_isLogin) {
-        await _auth
+        final userCredential = await _auth
             .signInWithEmailAndPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         )
             .timeout(const Duration(seconds: 6));
+
+        final user = userCredential.user;
+        if (user == null) {
+          if (!mounted) return;
+          _showMessage(_t('generic_error'));
+          return;
+        }
+
+        await user.reload();
+
         if (!mounted) return;
+
+        final refreshedUser = _auth.currentUser;
+
+        if (refreshedUser != null && !refreshedUser.emailVerified) {
+          return;
+        }
+
         _showMessage(_t('welcome_back'));
       } else {
-        await _auth
+        final userCredential = await _auth
             .createUserWithEmailAndPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         )
             .timeout(const Duration(seconds: 6));
+
+        final user = userCredential.user;
+        if (user == null) {
+          if (!mounted) return;
+          _showMessage(_t('generic_error'));
+          return;
+        }
+
+        await FirebaseAuth.instance.setLanguageCode(
+          _lang == AppLanguage.en ? 'en' : 'es',
+        );
+        await user.sendEmailVerification();
+
         if (!mounted) return;
-        _showMessage(_t('account_created'));
       }
     } catch (e) {
       debugPrint('Auth error: $e');
@@ -324,26 +326,20 @@ class _LoginScreenState extends State<LoginScreen>
   Future<void> _signInWithMicrosoft() async {
     if (_isLoading) return;
 
-    final attemptId = ++_microsoftAttemptId;
+    setState(() => _isLoading = true);
 
-    setState(() {
-      _isLoading = true;
-      _isMicrosoftAuthInProgress = true;
-      _microsoftFlowLeftApp = false;
-    });
+    final attemptId = ++_microsoftAttemptId;
+    _isMicrosoftAuthInProgress = true;
+    _microsoftFlowLeftApp = false;
 
     try {
       final provider = MicrosoftAuthProvider();
 
-      // Configuración de tenant y prompt según plan aprobado.
-      // Se asume compatibilidad con firebase_auth actual.
       provider.setCustomParameters({
         'prompt': 'select_account',
         'tenant': 'common',
       });
 
-      // Sin timeout corto: el flujo interactivo puede tardar
-      // por selección de cuenta, credenciales o MFA.
       final userCredential = await _auth.signInWithProvider(provider);
 
       final isNewUser =
@@ -357,21 +353,39 @@ class _LoginScreenState extends State<LoginScreen>
       debugPrint('Microsoft Auth error: $e');
       if (!mounted) return;
       final message = _friendlyAuthError(e);
-      // En cancelación silenciosa no se muestra mensaje.
       if (message.isNotEmpty) {
         _showMessage(message);
       }
     } finally {
       if (!mounted) return;
       if (attemptId != _microsoftAttemptId) return;
-
       _isMicrosoftAuthInProgress = false;
       _microsoftFlowLeftApp = false;
-
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
     }
+  }
+
+  void _openForgotPassword() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ForgotPasswordScreen(
+          initialEmail: _emailController.text.trim(),
+          useEnglish: _lang == AppLanguage.en,
+        ),
+      ),
+    );
+  }
+
+  void _openProblemReport() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const PilotErrorReportScreen(
+          initialArea: 'Acceso y cuenta',
+        ),
+      ),
+    );
   }
 
   void _showMessage(String message) {
@@ -391,8 +405,6 @@ class _LoginScreenState extends State<LoginScreen>
       _lang = _lang == AppLanguage.es ? AppLanguage.en : AppLanguage.es;
     });
   }
-
-  // ------------------------------ BUILD --------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -450,50 +462,9 @@ class _LoginScreenState extends State<LoginScreen>
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.08),
-                  blurRadius: 14,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Image.asset(
-              'assets/logo.png',
-              width: 60,
-              height: 60,
-              fit: BoxFit.contain,
-              errorBuilder: (context, error, stackTrace) => Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  color: AppColors.amber,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(Icons.bolt_rounded,
-                    color: Colors.white, size: 32),
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('BiPi',
-                  style: AppTypography.logo(
-                      color: palette.textPrimary, size: 28)),
-              const SizedBox(height: 2),
-              Text(_t('tagline'),
-                  style: AppTypography.tagline(
-                      color: palette.textMuted, size: 13)),
-            ],
-          ),
+          Text('BiPi',
+              style: AppTypography.logo(
+                  color: palette.textPrimary, size: 28)),
         ],
       ),
     );
@@ -610,18 +581,59 @@ class _LoginScreenState extends State<LoginScreen>
               onPressed: _isLoading ? null : _signInWithMicrosoft,
               label: _t('microsoft'),
             ),
-            const SizedBox(height: 16),
-            Center(
-              child: TextButton(
-                onPressed: _isLoading
-                    ? null
-                    : () => setState(() => _isLogin = !_isLogin),
-                child: Text(
-                  _isLogin ? _t('no_account') : _t('have_account'),
-                  style: AppTypography.label(
-                      color: palette.textPrimary, size: 14),
+            const SizedBox(height: 12),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextButton(
+                  onPressed: _isLoading
+                      ? null
+                      : () => setState(() => _isLogin = !_isLogin),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  child: Text(
+                    _isLogin ? _t('no_account') : _t('have_account'),
+                    style: AppTypography.label(
+                      color: palette.textPrimary,
+                      size: 14,
+                    ),
+                  ),
                 ),
-              ),
+                if (_isLogin)
+                  TextButton(
+                    onPressed: _isLoading ? null : _openForgotPassword,
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    child: Text(
+                      _t('forgot_password'),
+                      style: AppTypography.label(
+                        color: palette.textPrimary,
+                        size: 13,
+                      ),
+                    ),
+                  ),
+                TextButton.icon(
+                  onPressed: _isLoading ? null : _openProblemReport,
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: palette.textPrimary,
+                  ),
+                  icon: Icon(
+                    Icons.report_problem_outlined,
+                    size: 16,
+                    color: palette.textPrimary,
+                  ),
+                  label: Text(
+                    _t('report_problem'),
+                    style: AppTypography.label(
+                      color: palette.textPrimary,
+                      size: 13,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

@@ -8,7 +8,7 @@ enum StartSource {
   reminderRecalled,
 }
 
-enum ResponsibilityStatus { pending, started, completed, submitted }
+enum ResponsibilityStatus { pending, started, completed, submitted, discarded }
 
 enum ResponsibilityType { exam, lab, project, homework, presentation }
 
