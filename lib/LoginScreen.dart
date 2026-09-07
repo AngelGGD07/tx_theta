@@ -14,7 +14,6 @@ enum AppLanguage { es, en }
 class _Strings {
   static const Map<AppLanguage, Map<String, String>> _values = {
     AppLanguage.es: {
-      'tagline': 'Best Planner',
       'login_title': 'Iniciar sesión',
       'signup_title': 'Crear cuenta',
       'email': 'Correo institucional o personal',
@@ -52,9 +51,11 @@ class _Strings {
       'error_user_disabled': 'Esta cuenta fue deshabilitada.',
       'forgot_password': '¿Olvidaste tu contraseña?',
       'report_problem': 'Reportar un problema',
+      'login_context': 'Vuelve a tus decisiones pendientes.',
+      'signup_context':
+      'Compara cuándo decides empezar con cuándo empiezas realmente.',
     },
     AppLanguage.en: {
-      'tagline': 'Best Planner',
       'login_title': 'Log in',
       'signup_title': 'Create account',
       'email': 'School or personal email',
@@ -92,6 +93,9 @@ class _Strings {
       'error_user_disabled': 'This account has been disabled.',
       'forgot_password': 'Forgot your password?',
       'report_problem': 'Report a problem',
+      'login_context': 'Return to your pending decisions.',
+      'signup_context':
+      'Compare when you decide to start with when you actually start.',
     },
   };
 
@@ -107,7 +111,7 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
@@ -121,9 +125,11 @@ class _LoginScreenState extends State<LoginScreen>
   bool _obscurePassword = true;
   AppLanguage _lang = AppLanguage.es;
 
-  bool _isMicrosoftAuthInProgress = false;
-  bool _microsoftFlowLeftApp = false;
   int _microsoftAttemptId = 0;
+
+  late final AnimationController _entryController;
+  late final Animation<double> _fadeAnimation;
+  late final Animation<Offset> _slideAnimation;
 
   String _t(String key) => _Strings.t(_lang, key);
 
@@ -131,11 +137,44 @@ class _LoginScreenState extends State<LoginScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+
+    _entryController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+    );
+
+    _fadeAnimation = CurvedAnimation(
+      parent: _entryController,
+      curve: Curves.easeOutCubic,
+    );
+
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.03),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _entryController,
+        curve: Curves.easeOutCubic,
+      ),
+    );
+
+    final reduceMotion = WidgetsBinding
+        .instance
+        .platformDispatcher
+        .accessibilityFeatures
+        .disableAnimations;
+
+    if (reduceMotion) {
+      _entryController.value = 1.0;
+    } else {
+      _entryController.forward();
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _entryController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _passwordFocusNode.dispose();
@@ -143,7 +182,22 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {}
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // No se requiere manejo especial para el flujo de verificación.
+  }
+
+  @override
+  void didChangeAccessibilityFeatures() {
+    final reduceMotion = WidgetsBinding
+        .instance
+        .platformDispatcher
+        .accessibilityFeatures
+        .disableAnimations;
+
+    if (reduceMotion && _entryController.value < 1.0) {
+      _entryController.value = 1.0;
+    }
+  }
 
   String _friendlyAuthError(Object error) {
     if (error is TimeoutException) {
@@ -329,8 +383,6 @@ class _LoginScreenState extends State<LoginScreen>
     setState(() => _isLoading = true);
 
     final attemptId = ++_microsoftAttemptId;
-    _isMicrosoftAuthInProgress = true;
-    _microsoftFlowLeftApp = false;
 
     try {
       final provider = MicrosoftAuthProvider();
@@ -359,8 +411,6 @@ class _LoginScreenState extends State<LoginScreen>
     } finally {
       if (!mounted) return;
       if (attemptId != _microsoftAttemptId) return;
-      _isMicrosoftAuthInProgress = false;
-      _microsoftFlowLeftApp = false;
       setState(() => _isLoading = false);
     }
   }
@@ -419,9 +469,20 @@ class _LoginScreenState extends State<LoginScreen>
             children: [
               _buildTopBar(palette),
               const SizedBox(height: 24),
-              _buildLogoAndName(palette),
-              const SizedBox(height: 36),
-              _buildAnimatedForm(palette),
+              FadeTransition(
+                opacity: _fadeAnimation,
+                child: SlideTransition(
+                  position: _slideAnimation,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildIdentity(palette),
+                      const SizedBox(height: 28),
+                      _buildAnimatedForm(palette),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -456,32 +517,47 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  Widget _buildLogoAndName(AppPalette palette) {
-    return Center(
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Text('BiPi',
-              style: AppTypography.logo(
-                  color: palette.textPrimary, size: 28)),
-        ],
-      ),
+  Widget _buildIdentity(AppPalette palette) {
+    return Column(
+      children: [
+        Text(
+          'BiPi',
+          style: AppTypography.logo(
+            color: palette.textPrimary,
+            size: 32,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Text(
+            _isLogin ? _t('login_context') : _t('signup_context'),
+            style: AppTypography.body(
+              color: palette.textSecondary,
+              size: 14,
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildAnimatedForm(AppPalette palette) {
     return ClipRect(
       child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 320),
+        duration: const Duration(milliseconds: 280),
         switchInCurve: Curves.easeInOutCubic,
         switchOutCurve: Curves.easeInOutCubic,
         transitionBuilder: (child, animation) {
           final childKey = child.key as ValueKey<bool>;
           final isEntering = childKey.value == _isLogin;
           final Offset edgeOffset = isEntering
-              ? Offset(_isLogin ? -1.0 : 1.0, 0)
-              : Offset(_isLogin ? 1.0 : -1.0, 0);
+              ? const Offset(-0.06, 0)
+              : const Offset(0.06, 0);
           final slide =
           Tween<Offset>(begin: edgeOffset, end: Offset.zero)
               .animate(animation);
