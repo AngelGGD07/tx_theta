@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'AnalyticsService.dart';
@@ -357,6 +358,46 @@ class _CaptureResponsibilityScreenState
     });
   }
 
+  Future<void> _logCaptureEvents(
+      String responsibilityId, DateTime? predictedStart) async {
+    try {
+      await _analytics.logEvent(
+        AnalyticsEvents.responsibilityCreated,
+        parameters: {
+          AnalyticsParams.responsibilityId: responsibilityId,
+          AnalyticsParams.responsibilityType: _type.name,
+          AnalyticsParams.hasPrediction: predictedStart != null ? 1 : 0,
+        },
+      );
+
+      await _analytics.logEvent(
+        AnalyticsEvents.predictionCreated,
+        parameters: {
+          AnalyticsParams.responsibilityId: responsibilityId,
+          AnalyticsParams.predictionStatus:
+          predictedStart != null ? 'declared' : 'unknown',
+        },
+      );
+    } catch (e) {
+      debugPrint('Analytics capture error: ${e.runtimeType}');
+    }
+  }
+
+  void _logNotificationScheduled(String responsibilityId) {
+    unawaited(
+      _service
+          .logNotificationEvent(
+        responsibilityId: responsibilityId,
+        type: 'notification_scheduled',
+      )
+          .catchError((Object error) {
+        debugPrint(
+          'Notification event sync error: ${error.runtimeType}',
+        );
+      }),
+    );
+  }
+
   Future<void> _save() async {
     if (_isSaving) return;
 
@@ -406,40 +447,43 @@ class _CaptureResponsibilityScreenState
         predictedStartAt: predictedStart,
       );
 
-      await _analytics.logEvent(
-        AnalyticsEvents.responsibilityCreated,
-        parameters: {
-          AnalyticsParams.responsibilityId: responsibility.id,
-          AnalyticsParams.responsibilityType: _type.name,
-          AnalyticsParams.hasPrediction: predictedStart != null ? 1 : 0,
-        },
-      );
+      unawaited(_logCaptureEvents(responsibility.id, predictedStart));
 
-      await _analytics.logEvent(
-        AnalyticsEvents.predictionCreated,
-        parameters: {
-          AnalyticsParams.responsibilityId: responsibility.id,
-          AnalyticsParams.predictionStatus:
-          predictedStart != null ? 'declared' : 'unknown',
-        },
-      );
+      var notificationScheduled = true;
 
       if (predictedStart != null) {
-        final label = responsibility.subject ?? _typeLabel(_type);
-        await _notifications.scheduleVerification(
-          responsibilityId: responsibility.id,
-          subjectLabel: label,
-          predictedStartAt: predictedStart,
-        );
-        await _service.logNotificationEvent(
-          responsibilityId: responsibility.id,
-          type: 'notification_scheduled',
+        try {
+          await _notifications.scheduleVerification(
+            responsibilityId: responsibility.id,
+            subjectLabel:
+            responsibility.subject ?? _typeLabel(_type),
+            predictedStartAt: predictedStart,
+          );
+
+          _logNotificationScheduled(responsibility.id);
+        } catch (error) {
+          notificationScheduled = false;
+          debugPrint(
+            'Schedule notification error: ${error.runtimeType}',
+          );
+        }
+      }
+
+      if (!mounted) return;
+
+      if (!notificationScheduled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'La responsabilidad se guardó, pero no fue posible programar el recordatorio.',
+            ),
+          ),
         );
       }
 
-      if (mounted) Navigator.of(context).pop();
+      Navigator.of(context).pop();
     } catch (e) {
-      debugPrint('Capture save error: $e');
+      debugPrint('Capture save error: ${e.runtimeType}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

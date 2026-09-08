@@ -3,109 +3,252 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isSignedIn() {
-      return request.auth != null;
+    function isVerifiedUser() {
+      return request.auth != null
+        && (
+          request.auth.token.firebase.sign_in_provider != 'password'
+          || request.auth.token.email_verified == true
+        );
     }
 
     function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+      return isVerifiedUser()
+        && request.auth.uid == userId;
     }
 
-    // ---------- Validación de claves ----------
     function validResponsibilityKeys() {
       return request.resource.data.keys().hasOnly([
-        'userId', 'type', 'subject', 'description',
-        'createdAt', 'dueAt', 'predictedStartAt',
-        'predictionStatus', 'startedAt', 'startSource',
-        'completedAt', 'submittedAt', 'status'
+        'userId',
+        'type',
+        'subject',
+        'description',
+        'createdAt',
+        'dueAt',
+        'predictedStartAt',
+        'predictionStatus',
+        'startedAt',
+        'startSource',
+        'completedAt',
+        'submittedAt',
+        'status'
       ]);
     }
 
-    function validPredictionEventKeys() {
-      return request.resource.data.keys().hasOnly([
-        'userId', 'responsibilityId', 'predictedAt',
-        'predictedStartAt', 'response', 'respondedAt', 'eventId'
+    function validNotStartedKeys() {
+      return request.resource.data.keys().hasAll([
+        'eventId',
+        'userId',
+        'responsibilityId',
+        'predictedAt',
+        'predictedStartAt',
+        'response',
+        'respondedAt'
+      ])
+      && request.resource.data.keys().hasOnly([
+        'eventId',
+        'userId',
+        'responsibilityId',
+        'predictedAt',
+        'predictedStartAt',
+        'response',
+        'respondedAt'
+      ]);
+    }
+
+    function validPredictionCorrectedKeys() {
+      return request.resource.data.keys().hasAll([
+        'eventId',
+        'userId',
+        'responsibilityId',
+        'predictedAt',
+        'predictedStartAt',
+        'response',
+        'respondedAt',
+        'previousDueAt',
+        'newDueAt',
+        'previousPredictedStartAt',
+        'newPredictedStartAt',
+        'previousPredictionStatus',
+        'newPredictionStatus'
+      ])
+      && request.resource.data.keys().hasOnly([
+        'eventId',
+        'userId',
+        'responsibilityId',
+        'predictedAt',
+        'predictedStartAt',
+        'response',
+        'respondedAt',
+        'previousDueAt',
+        'newDueAt',
+        'previousPredictedStartAt',
+        'newPredictedStartAt',
+        'previousPredictionStatus',
+        'newPredictionStatus'
       ]);
     }
 
     function validNotificationEventKeys() {
       return request.resource.data.keys().hasOnly([
-        'userId', 'responsibilityId', 'type', 'at', 'actionSelected'
+        'userId',
+        'responsibilityId',
+        'type',
+        'at',
+        'actionSelected'
       ]);
     }
 
     function validConsentKeys() {
       return request.resource.data.keys().hasOnly([
-        'userId', 'consentVersion', 'appVersion',
-        'accepted', 'acceptedAt', 'withdrawnAt', 'locale'
+        'userId',
+        'consentVersion',
+        'appVersion',
+        'accepted',
+        'acceptedAt',
+        'withdrawnAt',
+        'locale'
       ]);
     }
 
-    // ---------- Responsibilities ----------
+    function validRegularResponsibilityUpdate() {
+      return validResponsibilityKeys()
+        && resource.data.status != 'discarded'
+        && request.resource.data.status != 'discarded';
+    }
+
+    function validDiscardUpdate(docId) {
+      let notYetId = 'not_yet_' + docId;
+
+      return resource.data.status == 'pending'
+        && resource.data.startedAt == null
+        && request.resource.data.status == 'discarded'
+        && request.resource.data.diff(resource.data)
+            .affectedKeys()
+            .hasOnly(['status'])
+        && !exists(
+          /databases/$(database)/documents/prediction_events/$(notYetId)
+        );
+    }
+
     match /responsibilities/{docId} {
       allow read: if isOwner(resource.data.userId);
 
-      allow create: if isSignedIn()
+      allow create: if isVerifiedUser()
         && request.resource.data.userId == request.auth.uid
         && validResponsibilityKeys();
 
-      allow update: if isSignedIn()
+      allow update: if isVerifiedUser()
         && resource.data.userId == request.auth.uid
         && request.resource.data.userId == request.auth.uid
-        && validResponsibilityKeys();
+        && (
+          validRegularResponsibilityUpdate()
+          || validDiscardUpdate(docId)
+        );
 
-      // No se permite delete durante el piloto.
       allow delete: if false;
     }
 
-    // ---------- Prediction Events (append-only) ----------
     match /prediction_events/{docId} {
-      allow read: if isOwner(resource.data.userId);
+      allow get: if isVerifiedUser()
+        && (
+          !exists(
+            /databases/$(database)/documents/prediction_events/$(docId)
+          )
+          || resource.data.userId == request.auth.uid
+        );
 
-      allow create: if isSignedIn()
+      allow list: if false;
+
+      allow create: if isVerifiedUser()
         && request.resource.data.userId == request.auth.uid
-        && validPredictionEventKeys();
+        && (
+          (
+            request.resource.data.response == 'not_started'
+            && validNotStartedKeys()
+            && request.resource.data.eventId == docId
+          )
+          ||
+          (
+            request.resource.data.response == 'prediction_corrected'
+            && validPredictionCorrectedKeys()
+            && request.resource.data.eventId == docId
+            && request.resource.data.previousPredictionStatus
+                in ['declared', 'unknown']
+            && request.resource.data.newPredictionStatus
+                in ['declared', 'unknown']
+            && request.resource.data.predictedAt is timestamp
+            && request.resource.data.respondedAt is timestamp
+            && request.resource.data.previousDueAt is timestamp
+            && request.resource.data.newDueAt is timestamp
+            && (
+              (
+                request.resource.data.newPredictionStatus == 'declared'
+                && request.resource.data.newPredictedStartAt is timestamp
+                && request.resource.data.predictedStartAt
+                    == request.resource.data.newPredictedStartAt
+              )
+              ||
+              (
+                request.resource.data.newPredictionStatus == 'unknown'
+                && request.resource.data.newPredictedStartAt == null
+                && request.resource.data.predictedStartAt == null
+              )
+            )
+            && (
+              (
+                request.resource.data.previousPredictionStatus == 'declared'
+                && request.resource.data.previousPredictedStartAt is timestamp
+              )
+              ||
+              (
+                request.resource.data.previousPredictionStatus == 'unknown'
+                && request.resource.data.previousPredictedStartAt == null
+              )
+            )
+            && (
+              request.resource.data.newPredictionStatus == 'unknown'
+              || request.resource.data.newDueAt
+                  > request.resource.data.newPredictedStartAt
+            )
+          )
+        );
 
-      // Se prohíbe update y delete: son append-only.
       allow update: if false;
       allow delete: if false;
     }
 
-    // ---------- Notification Events (append-only) ----------
     match /notification_events/{docId} {
       allow read: if isOwner(resource.data.userId);
 
-      allow create: if isSignedIn()
+      allow create: if isVerifiedUser()
         && request.resource.data.userId == request.auth.uid
         && validNotificationEventKeys();
 
-      // Se prohíbe update y delete: son append-only.
       allow update: if false;
       allow delete: if false;
     }
 
-    // ---------- Pilot Consents ----------
     match /pilot_consents/{userId} {
-      // El documento se identifica por el userId.
-      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow read: if isVerifiedUser()
+        && request.auth.uid == userId;
 
-      allow create: if isSignedIn()
+      allow create: if isVerifiedUser()
         && request.auth.uid == userId
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.consentVersion == 'pilot_2026_01'
-        && request.resource.data.appVersion == '1.0.0+1'
+        && request.resource.data.appVersion == '1.0.0+2'
         && request.resource.data.accepted == true
         && request.resource.data.acceptedAt == request.time
         && request.resource.data.withdrawnAt == null
         && request.resource.data.locale is string
         && validConsentKeys();
 
-      allow update: if isSignedIn()
+      allow update: if isVerifiedUser()
         && userId == request.auth.uid
         && resource.data.userId == request.auth.uid
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.consentVersion == 'pilot_2026_01'
-        && request.resource.data.appVersion == '1.0.0+1'
+        && request.resource.data.appVersion == '1.0.0+2'
         && request.resource.data.accepted == true
         && request.resource.data.acceptedAt == request.time
         && request.resource.data.withdrawnAt == null
@@ -113,6 +256,10 @@ service cloud.firestore {
         && validConsentKeys();
 
       allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

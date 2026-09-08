@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 
 import 'AnalyticsService.dart';
 import 'Responsibility.dart';
@@ -61,10 +63,13 @@ class ResponsibilityService {
     required DateTime dueAt,
     DateTime? predictedStartAt,
   }) async {
+    final uid = _uid;
+    final ref = _responsibilities.doc();
     final now = DateTime.now();
-    final data = Responsibility(
-      id: '',
-      userId: _uid,
+
+    final responsibility = Responsibility(
+      id: ref.id,
+      userId: uid,
       type: type,
       subject: subject,
       description: description,
@@ -74,11 +79,17 @@ class ResponsibilityService {
       predictionStatus:
       predictedStartAt != null ? 'declared' : 'unknown',
       status: ResponsibilityStatus.pending,
-    ).toFirestore();
+    );
 
-    final ref = await _responsibilities.add(data);
-    final snap = await ref.get();
-    return Responsibility.fromFirestore(snap);
+    unawaited(
+      ref.set(responsibility.toFirestore()).catchError((Object error) {
+        debugPrint(
+          'Create responsibility sync error: ${error.runtimeType}',
+        );
+      }),
+    );
+
+    return responsibility;
   }
 
   Stream<List<Responsibility>> watchActiveResponsibilities() {
