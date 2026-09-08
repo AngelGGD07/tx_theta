@@ -120,6 +120,9 @@ class _LoginScreenState extends State<LoginScreen>
   AppLanguage _lang = AppLanguage.es;
 
   int _microsoftAttemptId = 0;
+  bool _isMicrosoftAuthInProgress = false;
+  bool _microsoftFlowLeftApp = false;
+  Timer? _microsoftResumeTimer;
 
   late final AnimationController _entryController;
   late final Animation<double> _fadeAnimation;
@@ -168,6 +171,7 @@ class _LoginScreenState extends State<LoginScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _microsoftResumeTimer?.cancel();
     _entryController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
@@ -176,7 +180,42 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {}
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      if (_isMicrosoftAuthInProgress) {
+        _microsoftFlowLeftApp = true;
+      }
+      return;
+    }
+
+    if (state == AppLifecycleState.resumed) {
+      if (!_isMicrosoftAuthInProgress || !_microsoftFlowLeftApp) {
+        return;
+      }
+
+      _microsoftResumeTimer?.cancel();
+      final attemptId = _microsoftAttemptId;
+
+      _microsoftResumeTimer = Timer(
+        const Duration(milliseconds: 1500),
+            () {
+          if (!mounted) return;
+          if (!_isMicrosoftAuthInProgress) return;
+          if (attemptId != _microsoftAttemptId) return;
+
+          _microsoftAttemptId++;
+          _isMicrosoftAuthInProgress = false;
+          _microsoftFlowLeftApp = false;
+
+          if (_isLoading) {
+            setState(() => _isLoading = false);
+          }
+        },
+      );
+    }
+  }
 
   @override
   void didChangeAccessibilityFeatures() {
@@ -372,9 +411,13 @@ class _LoginScreenState extends State<LoginScreen>
   Future<void> _signInWithMicrosoft() async {
     if (_isLoading) return;
 
+    _microsoftResumeTimer?.cancel();
+
     setState(() => _isLoading = true);
 
     final attemptId = ++_microsoftAttemptId;
+    _isMicrosoftAuthInProgress = true;
+    _microsoftFlowLeftApp = false;
 
     try {
       final provider = MicrosoftAuthProvider();
@@ -386,24 +429,43 @@ class _LoginScreenState extends State<LoginScreen>
 
       final userCredential = await _auth.signInWithProvider(provider);
 
+      if (!mounted) return;
+      if (attemptId != _microsoftAttemptId) return;
+
       final isNewUser =
           userCredential.additionalUserInfo?.isNewUser ?? false;
 
-      if (!mounted) return;
       _showMessage(
         isNewUser ? _t('account_created') : _t('welcome_back'),
       );
-    } catch (e) {
-      debugPrint('Microsoft Auth error: $e');
+    } on FirebaseAuthException catch (e) {
+      debugPrint('Microsoft Auth code: ${e.code}');
       if (!mounted) return;
+      if (attemptId != _microsoftAttemptId) return;
+
+      final message = _friendlyAuthError(e);
+      if (message.isNotEmpty) {
+        _showMessage(message);
+      }
+    } catch (e) {
+      debugPrint('Microsoft Auth type: ${e.runtimeType}');
+      if (!mounted) return;
+      if (attemptId != _microsoftAttemptId) return;
+
       final message = _friendlyAuthError(e);
       if (message.isNotEmpty) {
         _showMessage(message);
       }
     } finally {
-      if (!mounted) return;
-      if (attemptId != _microsoftAttemptId) return;
-      setState(() => _isLoading = false);
+      if (mounted && attemptId == _microsoftAttemptId) {
+        _microsoftResumeTimer?.cancel();
+        _isMicrosoftAuthInProgress = false;
+        _microsoftFlowLeftApp = false;
+
+        if (_isLoading) {
+          setState(() => _isLoading = false);
+        }
+      }
     }
   }
 
@@ -516,7 +578,7 @@ class _LoginScreenState extends State<LoginScreen>
           'BiPi',
           style: AppTypography.logo(
             color: palette.textPrimary,
-            size: 32,
+            size: 42,
           ),
           textAlign: TextAlign.center,
         ),
