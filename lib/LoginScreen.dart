@@ -51,9 +51,6 @@ class _Strings {
       'error_user_disabled': 'Esta cuenta fue deshabilitada.',
       'forgot_password': '¿Olvidaste tu contraseña?',
       'report_problem': 'Reportar un problema',
-      'login_context': 'Vuelve a tus decisiones pendientes.',
-      'signup_context':
-      'Compara cuándo decides empezar con cuándo empiezas realmente.',
     },
     AppLanguage.en: {
       'login_title': 'Log in',
@@ -93,9 +90,6 @@ class _Strings {
       'error_user_disabled': 'This account has been disabled.',
       'forgot_password': 'Forgot your password?',
       'report_problem': 'Report a problem',
-      'login_context': 'Return to your pending decisions.',
-      'signup_context':
-      'Compare when you decide to start with when you actually start.',
     },
   };
 
@@ -182,9 +176,7 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // No se requiere manejo especial para el flujo de verificación.
-  }
+  void didChangeAppLifecycleState(AppLifecycleState state) {}
 
   @override
   void didChangeAccessibilityFeatures() {
@@ -527,20 +519,6 @@ class _LoginScreenState extends State<LoginScreen>
             size: 32,
           ),
           textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 8),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Text(
-            _isLogin ? _t('login_context') : _t('signup_context'),
-            style: AppTypography.body(
-              color: palette.textSecondary,
-              size: 14,
-            ),
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
         ),
       ],
     );

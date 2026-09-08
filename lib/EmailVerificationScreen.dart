@@ -81,8 +81,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
     } catch (e) {
       debugPrint('Email verification check error: $e');
       if (mounted) {
-        _showMessage(
-            'No pudimos verificar tu correo. Revisa tu conexión e inténtalo nuevamente.');
+        _showMessage('No fue posible verificar tu correo. Inténtalo nuevamente.');
       }
     } finally {
       if (mounted) setState(() => _isChecking = false);
@@ -102,7 +101,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
       await user.sendEmailVerification();
 
       if (!mounted) return;
-      _showMessage('Enviamos un nuevo enlace de verificación.');
+      _showMessage('Se solicitó un nuevo enlace de verificación.');
 
       _startCooldown();
     } on FirebaseAuthException catch (e) {
@@ -111,15 +110,18 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
       if (e.code == 'too-many-requests') {
         _showMessage(
             'Demasiados intentos. Espera un momento antes de volver a intentarlo.');
+      } else if (e.code == 'network-request-failed') {
+        _showMessage(
+            'No fue posible conectar. Revisa tu conexión e inténtalo nuevamente.');
       } else {
         _showMessage(
-            'No pudimos reenviar el enlace. Revisa tu conexión e inténtalo nuevamente.');
+            'No fue posible solicitar otro enlace. Inténtalo nuevamente.');
       }
     } catch (e) {
       debugPrint('Resend verification error: $e');
       if (mounted) {
         _showMessage(
-            'No pudimos reenviar el enlace. Revisa tu conexión e inténtalo nuevamente.');
+            'No fue posible solicitar otro enlace. Inténtalo nuevamente.');
       }
     } finally {
       if (mounted) setState(() => _isResending = false);
@@ -183,11 +185,19 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Enviamos un enlace de verificación a $email. '
-                    'Ábrelo y luego vuelve a BiPi.',
+                'Revisa tu correo para abrir el enlace de verificación enviado a:',
                 style: AppTypography.body(
                   color: palette.textSecondary,
                   size: 15,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                email,
+                style: AppTypography.body(
+                  color: palette.textPrimary,
+                  size: 16,
                 ),
                 textAlign: TextAlign.center,
               ),

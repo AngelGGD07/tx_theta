@@ -132,8 +132,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         case 'network-request-failed':
           _showMessage(
             _t(
-              'No pudimos conectarnos. Revisa tu conexión e inténtalo nuevamente.',
-              "We couldn't connect. Check your internet connection and try again.",
+              'No se pudo conectar. Revisa tu conexión e inténtalo nuevamente.',
+              "Couldn't connect. Check your internet connection and try again.",
             ),
           );
           break;
@@ -160,8 +160,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         default:
           _showMessage(
             _t(
-              'No pudimos enviar el enlace. Inténtalo nuevamente.',
-              "We couldn't send the link. Please try again.",
+              'No se pudo enviar el enlace. Inténtalo nuevamente.',
+              "Couldn't send the link. Please try again.",
             ),
           );
       }
@@ -170,19 +170,17 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       if (!mounted) return;
       _showMessage(
         _t(
-          'No pudimos conectarnos. Revisa tu conexión e inténtalo nuevamente.',
-          "We couldn't connect. Check your internet connection and try again.",
+          'No se pudo conectar. Revisa tu conexión e inténtalo nuevamente.',
+          "Couldn't connect. Check your internet connection and try again.",
         ),
       );
     } catch (e) {
-      debugPrint(
-        'Forgot password unexpected error: ${e.runtimeType}',
-      );
+      debugPrint('Forgot password unexpected error: ${e.runtimeType}');
       if (!mounted) return;
       _showMessage(
         _t(
-          'No pudimos enviar el enlace. Inténtalo nuevamente.',
-          "We couldn't send the link. Please try again.",
+          'No se pudo enviar el enlace. Inténtalo nuevamente.',
+          "Couldn't send the link. Please try again.",
         ),
       );
     } finally {
@@ -241,10 +239,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               const SizedBox(height: 24),
               Text(
                 _t(
-                  'Introduce el correo asociado a tu cuenta. Te enviaremos '
-                      'un enlace para crear una contraseña nueva.',
-                  'Enter the email associated with your account. '
-                      "We'll send you a link to create a new password.",
+                  'Introduce el correo asociado a tu cuenta para solicitar un enlace de restablecimiento.',
+                  'Enter the email associated with your account to request a reset link.',
                 ),
                 style: AppTypography.body(
                   color: palette.textSecondary,

@@ -116,7 +116,7 @@ class _CaptureResponsibilityScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Cambiamos la entrega. Selecciona nuevamente cuándo crees que empezarás.',
+            'La entrega cambió. Selecciona nuevamente cuándo crees que empezarás.',
           ),
         ),
       );
@@ -562,7 +562,7 @@ class _CaptureResponsibilityScreenState
             _buildSectionTitle(predictionTitle, palette),
             const SizedBox(height: 4),
             Text(
-              'Elige una hora realista. La compararemos con la hora en que realmente empieces.',
+              'Elige un momento realista. Después verás qué tan cerca estuviste.',
               style: AppTypography.body(
                 color: palette.textSecondary,
                 size: 14,
@@ -570,7 +570,7 @@ class _CaptureResponsibilityScreenState
             ),
             const SizedBox(height: 8),
             Text(
-              'Podrás cambiarla antes de la hora elegida, siempre que aún no hayas respondido ni comenzado.',
+              'Puedes cambiarlo antes del momento elegido, siempre que no hayas respondido ni empezado.',
               style: AppTypography.body(
                 color: palette.textMuted,
                 size: 13,

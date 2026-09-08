@@ -165,7 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ?..hideCurrentSnackBar()
       ..showSnackBar(
         const SnackBar(
-          content: Text('Esta observación ya fue descartada.'),
+          content: Text('Esta responsabilidad ya fue descartada.'),
         ),
       );
   }
@@ -295,7 +295,7 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'Pon a prueba tus decisiones',
+              '¿Qué tienes pendiente?',
               textAlign: TextAlign.center,
               style: AppTypography.screenTitle(
                 color: palette.textPrimary,
@@ -304,8 +304,7 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Registra una responsabilidad para contrastar tu intención '
-                  'con tu inicio real.',
+              'Anota algo que tengas que hacer y elige cuándo crees que empezarás.',
               textAlign: TextAlign.center,
               style: AppTypography.body(
                 color: palette.textSecondary,
