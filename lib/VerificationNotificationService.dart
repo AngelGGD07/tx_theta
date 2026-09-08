@@ -128,21 +128,6 @@ class VerificationNotificationService {
     );
 
     final scheduledTime = tz.TZDateTime.from(predictedStartAt, tz.local);
-    final now = tz.TZDateTime.now(tz.local);
-
-    if (kDebugMode) {
-      debugPrint('Hora actual (tz): $now');
-      debugPrint('Hora programada (tz): $scheduledTime');
-      debugPrint(
-          'Diferencia: ${scheduledTime.difference(now).inSeconds} segundos');
-    }
-
-    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    final canExact = await androidPlugin?.canScheduleExactNotifications();
-    if (kDebugMode) {
-      debugPrint('¿Puede programar alarmas exactas?: $canExact');
-    }
 
     await _plugin.zonedSchedule(
       notificationId,
@@ -162,16 +147,6 @@ class VerificationNotificationService {
         AnalyticsParams.responsibilityId: responsibilityId,
       },
     );
-
-    if (kDebugMode) {
-      final pending = await _plugin.pendingNotificationRequests();
-      debugPrint('Notificaciones pendientes: ${pending.length}');
-      debugPrint('Programada => responsibilityId: $responsibilityId, '
-          'notificationId: $notificationId');
-      for (final p in pending) {
-        debugPrint('Pendiente => id: ${p.id}, payload: ${p.payload}');
-      }
-    }
   }
 
   Future<void> cancelVerification(String responsibilityId) async {
@@ -184,16 +159,6 @@ class VerificationNotificationService {
         AnalyticsParams.responsibilityId: responsibilityId,
       },
     );
-
-    if (kDebugMode) {
-      final pending = await _plugin.pendingNotificationRequests();
-      debugPrint('Cancelada => responsibilityId: $responsibilityId, '
-          'notificationId: $notificationId');
-      debugPrint('Notificaciones pendientes tras cancelar: ${pending.length}');
-      for (final p in pending) {
-        debugPrint('Pendiente => id: ${p.id}, payload: ${p.payload}');
-      }
-    }
   }
 
   void _handleResponse(NotificationResponse response) {

@@ -139,13 +139,13 @@ class _PilotErrorReportScreenState extends State<PilotErrorReportScreen> {
 
       switch (result.status) {
         case ShareResultStatus.success:
-          _showMessage('Se compartió el reporte.');
+          _showMessage('El reporte se entregó a la aplicación seleccionada.');
           break;
         case ShareResultStatus.dismissed:
           break;
         case ShareResultStatus.unavailable:
           _showMessage(
-            'No pudimos abrir las opciones para compartir. Puedes copiar el reporte.',
+            'No fue posible abrir las opciones para compartir. Puedes copiar el reporte.',
           );
           break;
       }
@@ -153,7 +153,7 @@ class _PilotErrorReportScreenState extends State<PilotErrorReportScreen> {
       debugPrint('Share report error: ${e.runtimeType}');
       if (!mounted) return;
       _showMessage(
-        'No pudimos abrir las opciones para compartir. Puedes copiar el reporte.',
+        'No fue posible abrir las opciones para compartir. Puedes copiar el reporte.',
       );
     } finally {
       if (mounted) setState(() => _isSharing = false);
@@ -183,7 +183,7 @@ class _PilotErrorReportScreenState extends State<PilotErrorReportScreen> {
     } catch (e) {
       debugPrint('Copy report error: ${e.runtimeType}');
       if (!mounted) return;
-      _showMessage('No pudimos copiar el reporte.');
+      _showMessage('No fue posible copiar el reporte.');
     }
   }
 
@@ -226,8 +226,7 @@ class _PilotErrorReportScreenState extends State<PilotErrorReportScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'Cuéntanos qué estabas intentando hacer y qué ocurrió. '
-                    'Prepararemos un reporte para que puedas compartirlo con el responsable del piloto.',
+                'Describe qué intentabas hacer y qué pasó. El reporte quedará listo para compartirlo con quien coordina el piloto.',
                 style: AppTypography.body(
                   color: palette.textSecondary,
                   size: 14,
