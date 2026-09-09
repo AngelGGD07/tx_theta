@@ -25,6 +25,10 @@ class ResponsibilityService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final AnalyticsService _analytics = AnalyticsService();
 
+  /// Bloqueo transitorio para impedir operaciones simultáneas de inicio
+  /// para la misma responsabilidad dentro del mismo proceso.
+  final Set<String> _pendingStarts = {};
+
   String get _uid {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -134,135 +138,170 @@ class ResponsibilityService {
     }
   }
 
-  Future<void> markStarted({
-    required String responsibilityId,
-    required DateTime actualStartAt,
-    required StartSource source,
-  }) async {
-    final docRef = _responsibilities.doc(responsibilityId);
-    var didWrite = false;
-
-    await _db.runTransaction((transaction) async {
-      final snap = await transaction.get(docRef);
-
-      if (!snap.exists) {
-        throw StateError('Responsabilidad no encontrada: $responsibilityId');
-      }
-
-      final data = snap.data()!;
-
-      if (data['userId'] != _uid) {
-        throw StateError(
-            'La responsabilidad no pertenece al usuario autenticado.');
-      }
-
-      if (data['status'] == ResponsibilityStatus.discarded.name) {
-        throw const DiscardedResponsibilityException();
-      }
-
-      if (data['startedAt'] != null) {
-        return;
-      }
-
-      transaction.update(docRef, {
-        'startedAt': Timestamp.fromDate(actualStartAt),
-        'startSource': source.name,
-        'status': ResponsibilityStatus.started.name,
-      });
-      didWrite = true;
-    });
-
-    if (!didWrite) return;
-
-    await _logStartRegistered(responsibilityId, source);
+  /// Obtiene una responsabilidad desde la caché local.
+  /// No realiza lectura remota.
+  Future<Responsibility?> getCachedResponsibility(String responsibilityId) async {
+    try {
+      final doc = await _responsibilities
+          .doc(responsibilityId)
+          .get(const GetOptions(source: Source.cache));
+      if (!doc.exists) return null;
+      return Responsibility.fromFirestore(doc);
+    } catch (e) {
+      debugPrint('Cache read error: ${e.runtimeType}');
+      return null;
+    }
   }
 
-  Future<bool> markStartedIfNotAlready({
+  /// Helper privado para ejecutar la escritura de inicio.
+  /// No espera confirmación remota.
+  Future<String> _commitStart({
+    required String responsibilityId,
+    required DateTime actualStartAt,
+    required StartSource source,
+    required String startEventId,
+  }) async {
+    final uid = _uid;
+    final docRef = _responsibilities.doc(responsibilityId);
+    final eventRef = _predictionEvents.doc(startEventId);
+
+    final batch = _db.batch();
+
+    batch.update(docRef, {
+      'status': ResponsibilityStatus.started.name,
+      'startedAt': Timestamp.fromDate(actualStartAt),
+      'startSource': source.name,
+      'activeStartEventId': startEventId,
+    });
+
+    batch.set(eventRef, {
+      'eventId': startEventId,
+      'userId': uid,
+      'responsibilityId': responsibilityId,
+      'type': 'start_registered',
+      'startedAt': Timestamp.fromDate(actualStartAt),
+      'startSource': source.name,
+      'recordedAt': Timestamp.fromDate(DateTime.now()),
+    });
+
+    unawaited(
+      batch.commit().catchError((Object error) {
+        debugPrint('Start sync error: ${error.runtimeType}');
+      }),
+    );
+
+    return startEventId;
+  }
+
+  Future<String> markStarted({
     required String responsibilityId,
     required DateTime actualStartAt,
     required StartSource source,
   }) async {
-    final docRef = _responsibilities.doc(responsibilityId);
-    var didWrite = false;
-
-    await _db.runTransaction((transaction) async {
-      final snap = await transaction.get(docRef);
-
-      if (!snap.exists) {
-        throw StateError('Responsabilidad no encontrada: $responsibilityId');
-      }
-
-      final data = snap.data()!;
-
-      if (data['userId'] != _uid) {
-        throw StateError(
-            'La responsabilidad no pertenece al usuario autenticado.');
-      }
-
-      if (data['status'] == ResponsibilityStatus.discarded.name) {
-        throw const DiscardedResponsibilityException();
-      }
-
-      if (data['startedAt'] != null) {
-        didWrite = false;
-        return;
-      }
-
-      transaction.update(docRef, {
-        'startedAt': Timestamp.fromDate(actualStartAt),
-        'startSource': source.name,
-        'status': ResponsibilityStatus.started.name,
-      });
-      didWrite = true;
-    });
-
-    if (!didWrite) {
-      return false;
+    if (_pendingStarts.contains(responsibilityId)) {
+      throw StateError('Ya hay un inicio en curso para esta responsabilidad.');
     }
 
-    await _logStartRegistered(responsibilityId, source);
-    return true;
+    _pendingStarts.add(responsibilityId);
+
+    try {
+      final attemptId = DateTime.now().microsecondsSinceEpoch.toString();
+      final startEventId = 'start_${responsibilityId}_$attemptId';
+
+      final eventId = await _commitStart(
+        responsibilityId: responsibilityId,
+        actualStartAt: actualStartAt,
+        source: source,
+        startEventId: startEventId,
+      );
+
+      unawaited(
+        _logStartRegistered(responsibilityId, source).catchError((Object error) {
+          debugPrint('Start analytics error: ${error.runtimeType}');
+        }),
+      );
+
+      return eventId;
+    } finally {
+      _pendingStarts.remove(responsibilityId);
+    }
   }
 
-  Future<void> undoStart(String responsibilityId) async {
+  Future<String?> markStartedIfNotAlready({
+    required String responsibilityId,
+    required DateTime actualStartAt,
+    required StartSource source,
+  }) async {
+    if (_pendingStarts.contains(responsibilityId)) {
+      return null;
+    }
+
+    _pendingStarts.add(responsibilityId);
+
+    try {
+      final attemptId = DateTime.now().microsecondsSinceEpoch.toString();
+      final startEventId = 'start_${responsibilityId}_$attemptId';
+
+      final eventId = await _commitStart(
+        responsibilityId: responsibilityId,
+        actualStartAt: actualStartAt,
+        source: source,
+        startEventId: startEventId,
+      );
+
+      unawaited(
+        _logStartRegistered(responsibilityId, source).catchError((Object error) {
+          debugPrint('Start analytics error: ${error.runtimeType}');
+        }),
+      );
+
+      return eventId;
+    } finally {
+      _pendingStarts.remove(responsibilityId);
+    }
+  }
+
+  Future<void> undoStart(
+      String responsibilityId, {
+        required String activeStartEventId,
+      }) async {
+    final uid = _uid;
     final docRef = _responsibilities.doc(responsibilityId);
-    var didWrite = false;
+    final undoEventId = 'undo_${responsibilityId}_$activeStartEventId';
 
-    await _db.runTransaction((transaction) async {
-      final snap = await transaction.get(docRef);
+    final batch = _db.batch();
 
-      if (!snap.exists) {
-        throw StateError('Responsabilidad no encontrada: $responsibilityId');
-      }
-
-      final data = snap.data()!;
-
-      if (data['userId'] != _uid) {
-        throw StateError(
-            'La responsabilidad no pertenece al usuario autenticado.');
-      }
-
-      if (data['status'] == ResponsibilityStatus.discarded.name) {
-        throw const DiscardedResponsibilityException();
-      }
-
-      if (data['status'] != ResponsibilityStatus.started.name) {
-        return;
-      }
-
-      transaction.update(docRef, {
-        'startedAt': null,
-        'startSource': null,
-        'status': ResponsibilityStatus.pending.name,
-      });
-      didWrite = true;
+    batch.update(docRef, {
+      'status': ResponsibilityStatus.pending.name,
+      'startedAt': null,
+      'startSource': null,
+      'activeStartEventId': null,
     });
 
-    if (!didWrite) return;
+    batch.set(_predictionEvents.doc(undoEventId), {
+      'eventId': undoEventId,
+      'userId': uid,
+      'responsibilityId': responsibilityId,
+      'type': 'start_undone',
+      'startEventId': activeStartEventId,
+      'undoneAt': Timestamp.fromDate(DateTime.now()),
+    });
 
-    await _analytics.logEvent(
-      AnalyticsEvents.startUndone,
-      parameters: {AnalyticsParams.responsibilityId: responsibilityId},
+    unawaited(
+      batch.commit().catchError((Object error) {
+        debugPrint('Undo sync error: ${error.runtimeType}');
+      }),
+    );
+
+    unawaited(
+      _analytics
+          .logEvent(
+        AnalyticsEvents.startUndone,
+        parameters: {AnalyticsParams.responsibilityId: responsibilityId},
+      )
+          .catchError((Object error) {
+        debugPrint('Undo analytics error: ${error.runtimeType}');
+      }),
     );
   }
 
@@ -514,8 +553,7 @@ class ResponsibilityService {
 
       if (oldPredictedStartAt != null &&
           !oldPredictedStartAt.isAfter(nowMinute)) {
-        throw StateError(
-            'Esta predicción ya forma parte de tu evidencia y no puede reemplazarse.');
+        throw StateError('Esta predicción ya no se puede cambiar.');
       }
 
       final notYetRef = _predictionEvents.doc('not_yet_$responsibilityId');
@@ -623,69 +661,42 @@ class ResponsibilityService {
 
   Future<void> recordNotYetResponse({
     required String responsibilityId,
+    required DateTime predictedAt,
+    required DateTime predictedStartAt,
   }) async {
-    final responsibilityRef = _responsibilities.doc(responsibilityId);
+    final uid = _uid;
     final eventRef = _predictionEvents.doc('not_yet_$responsibilityId');
-    var didWrite = false;
 
-    await _db.runTransaction((transaction) async {
-      final responsibilitySnapshot =
-      await transaction.get(responsibilityRef);
+    final batch = _db.batch();
 
-      if (!responsibilitySnapshot.exists) {
-        throw StateError('Responsabilidad no encontrada: $responsibilityId');
-      }
-
-      final responsibilityData = responsibilitySnapshot.data()!;
-
-      if (responsibilityData['userId'] != _uid) {
-        throw StateError(
-            'La responsabilidad no pertenece al usuario autenticado.');
-      }
-
-      if (responsibilityData['status'] ==
-          ResponsibilityStatus.discarded.name) {
-        throw const DiscardedResponsibilityException();
-      }
-
-      final existingEvent = await transaction.get(eventRef);
-      if (existingEvent.exists) {
-        didWrite = false;
-        return;
-      }
-
-      final createdAt = responsibilityData['createdAt'];
-      final predictedStartAt = responsibilityData['predictedStartAt'];
-
-      if (createdAt is! Timestamp) {
-        throw StateError(
-            'La responsabilidad no contiene un createdAt válido.');
-      }
-      if (predictedStartAt is! Timestamp) {
-        throw StateError(
-            'No se puede registrar not_yet sin una predicción declarada.');
-      }
-
-      transaction.set(eventRef, {
-        'eventId': eventRef.id,
-        'userId': _uid,
-        'responsibilityId': responsibilityId,
-        'predictedAt': createdAt,
-        'predictedStartAt': predictedStartAt,
-        'response': 'not_started',
-        'respondedAt': FieldValue.serverTimestamp(),
-      });
-      didWrite = true;
+    batch.set(eventRef, {
+      'eventId': 'not_yet_$responsibilityId',
+      'userId': uid,
+      'responsibilityId': responsibilityId,
+      'predictedAt': Timestamp.fromDate(predictedAt),
+      'predictedStartAt': Timestamp.fromDate(predictedStartAt),
+      'response': 'not_started',
+      'respondedAt': Timestamp.fromDate(DateTime.now()),
     });
 
-    if (!didWrite) return;
+    unawaited(
+      batch.commit().catchError((Object error) {
+        debugPrint('Not yet sync error: ${error.runtimeType}');
+      }),
+    );
 
-    await _analytics.logEvent(
-      AnalyticsEvents.notificationResponsePersisted,
-      parameters: {
-        AnalyticsParams.responsibilityId: responsibilityId,
-        AnalyticsParams.actionId: VerificationAction.notYet,
-      },
+    unawaited(
+      _analytics
+          .logEvent(
+        AnalyticsEvents.notificationResponsePersisted,
+        parameters: {
+          AnalyticsParams.responsibilityId: responsibilityId,
+          AnalyticsParams.actionId: VerificationAction.notYet,
+        },
+      )
+          .catchError((Object error) {
+        debugPrint('Not yet analytics error: ${error.runtimeType}');
+      }),
     );
   }
 
