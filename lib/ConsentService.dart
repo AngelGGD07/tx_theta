@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 /// Servicio mínimo para el consentimiento informado del piloto.
@@ -6,7 +7,7 @@ import 'package:flutter/widgets.dart';
 class ConsentService {
   static const String collectionName = 'pilot_consents';
   static const String currentConsentVersion = 'pilot_2026_01';
-  static const String currentAppVersion = '1.0.0+1';
+  static const String currentAppVersion = '1.0.0+2';
 
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
@@ -19,20 +20,47 @@ class ConsentService {
     return _consents.doc(userId).snapshots();
   }
 
+  /// Comprueba si Firestore es accesible desde el servidor.
+  /// No escribe datos.
+  Future<bool> checkServerAccess(String userId) async {
+    try {
+      await _consents
+          .doc(userId)
+          .get(const GetOptions(source: Source.server))
+          .timeout(const Duration(seconds: 4));
+      return true;
+    } catch (e) {
+      debugPrint('Consent server check error: ${e.runtimeType}');
+      return false;
+    }
+  }
+
   /// Graba o sobrescribe el consentimiento con la versión actual.
+  /// Utiliza una transacción para garantizar que falle sin conexión
+  /// y no deje una escritura offline pendiente.
   Future<void> acceptConsent({required String userId}) async {
     final locale =
         WidgetsBinding.instance.platformDispatcher.locale.languageCode;
 
-    await _consents.doc(userId).set({
-      'userId': userId,
-      'consentVersion': currentConsentVersion,
-      'appVersion': currentAppVersion,
-      'accepted': true,
-      'acceptedAt': FieldValue.serverTimestamp(),
-      'withdrawnAt': null,
-      'locale': locale,
-    }, SetOptions(merge: false));
+    final consentRef = _consents.doc(userId);
+
+    await _db.runTransaction((transaction) async {
+      await transaction.get(consentRef);
+
+      transaction.set(
+        consentRef,
+        {
+          'userId': userId,
+          'consentVersion': currentConsentVersion,
+          'appVersion': currentAppVersion,
+          'accepted': true,
+          'acceptedAt': FieldValue.serverTimestamp(),
+          'withdrawnAt': null,
+          'locale': locale,
+        },
+        SetOptions(merge: false),
+      );
+    });
   }
 
   /// Determina si el snapshot contiene un consentimiento vigente.

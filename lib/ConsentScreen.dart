@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'AppColors.dart';
 import 'ConsentService.dart';
@@ -23,6 +24,8 @@ class _ConsentScreenState extends State<ConsentScreen> {
   String? _signOutError;
 
   Future<void> _accept() async {
+    if (_isAccepting) return;
+
     setState(() {
       _isAccepting = true;
       _error = null;
@@ -39,13 +42,34 @@ class _ConsentScreenState extends State<ConsentScreen> {
     }
 
     try {
-      await _consentService.acceptConsent(userId: user.uid);
+      final connectivityResults = await Connectivity().checkConnectivity();
+      if (connectivityResults.contains(ConnectivityResult.none)) {
+        if (!mounted) return;
+        setState(() {
+          _isAccepting = false;
+          _error = 'Necesitas conexión a Internet para confirmar tu participación.';
+        });
+        return;
+      }
+
+      final serverAccessible = await _consentService.checkServerAccess(user.uid);
+      if (!serverAccessible) {
+        if (!mounted) return;
+        setState(() {
+          _isAccepting = false;
+          _error = 'No pudimos conectar con Firebase. Revisa tu conexión e inténtalo nuevamente.';
+        });
+        return;
+      }
+
+      await _consentService.acceptConsent(userId: user.uid)
+          .timeout(const Duration(seconds: 10));
     } catch (e) {
+      debugPrint('Consent accept error: ${e.runtimeType}');
       if (!mounted) return;
       setState(() {
         _isAccepting = false;
-        _error = 'No se pudo registrar el consentimiento. '
-            'Revisa tu conexión e inténtalo nuevamente.';
+        _error = 'No se pudo registrar el consentimiento. Revisa tu conexión e inténtalo nuevamente.';
       });
     }
   }
@@ -59,6 +83,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
     try {
       await FirebaseAuth.instance.signOut();
     } catch (e) {
+      debugPrint('Sign out error: ${e.runtimeType}');
       if (!mounted) return;
       setState(() {
         _isSigningOut = false;
