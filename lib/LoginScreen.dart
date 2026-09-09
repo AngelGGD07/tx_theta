@@ -582,6 +582,18 @@ class _LoginScreenState extends State<LoginScreen>
           ),
           textAlign: TextAlign.center,
         ),
+        const SizedBox(height: 2),
+        Text(
+          'PILOTO',
+          style: AppTypography.label(
+            color: palette.textSecondary,
+            size: 12,
+          ).copyWith(
+            fontWeight: FontWeight.w600,
+            letterSpacing: 2.4,
+          ),
+          textAlign: TextAlign.center,
+        ),
       ],
     );
   }

@@ -47,7 +47,7 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
     setState(() => _isMarkingStarted = true);
 
     try {
-      await widget.service.markStarted(
+      final startEventId = await widget.service.markStarted(
         responsibilityId: widget.responsibility.id,
         actualStartAt: DateTime.now(),
         source: StartSource.manualLive,
@@ -63,7 +63,10 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
           action: SnackBarAction(
             label: 'DESHACER',
             onPressed: () async {
-              await widget.service.undoStart(widget.responsibility.id);
+              await widget.service.undoStart(
+                widget.responsibility.id,
+                activeStartEventId: startEventId,
+              );
             },
           ),
         ),
@@ -89,14 +92,6 @@ class _ResponsibilityCardState extends State<ResponsibilityCard> {
   }
 
   Future<void> _markStartedInThePast() async {
-    try {
-      await widget.service
-          .ensureResponsibilityActive(widget.responsibility.id);
-    } on DiscardedResponsibilityException {
-      if (mounted) _showMessage('Esta responsabilidad ya fue descartada.');
-      return;
-    }
-
     await showPastStartSelector(
       context,
       widget.responsibility.id,
@@ -1280,7 +1275,8 @@ class _DatesEditorSheetState extends State<_DatesEditorSheet> {
           suggested.isBefore(_newDueAt)) {
         initialDateTime = suggested;
       } else {
-        final lastPossibleStart = _newDueAt.subtract(const Duration(minutes: 1));
+        final lastPossibleStart =
+        _newDueAt.subtract(const Duration(minutes: 1));
         if (lastPossibleStart.day == today.day &&
             lastPossibleStart.isAfter(now) &&
             lastPossibleStart.isBefore(_newDueAt)) {
@@ -1458,7 +1454,8 @@ class _DatesEditorSheetState extends State<_DatesEditorSheet> {
                   children: [
                     _buildDateChoiceChip(
                       label: tomorrowLabel,
-                      selected: _predictionChoice == _PredictionChoice.tomorrow,
+                      selected:
+                      _predictionChoice == _PredictionChoice.tomorrow,
                       onSelected: () => _pickTomorrowStartTime(),
                     ),
                     _buildDateChoiceChip(
@@ -1466,12 +1463,14 @@ class _DatesEditorSheetState extends State<_DatesEditorSheet> {
                           _predictionChoice == _PredictionChoice.pickDate
                           ? _formatDateTime(_newPredictedStartAt!)
                           : 'Elegir fecha',
-                      selected: _predictionChoice == _PredictionChoice.pickDate,
+                      selected:
+                      _predictionChoice == _PredictionChoice.pickDate,
                       onSelected: () => _pickCustomStartDate(),
                     ),
                     _buildDateChoiceChip(
                       label: 'Todavía no lo sé',
-                      selected: _predictionChoice == _PredictionChoice.unknown,
+                      selected:
+                      _predictionChoice == _PredictionChoice.unknown,
                       onSelected: () => setState(() {
                         _predictionChoice = _PredictionChoice.unknown;
                       }),
@@ -1739,7 +1738,7 @@ Future<void> showPastStartSelector(
     return;
   }
 
-  await service.markStarted(
+  final startEventId = await service.markStarted(
     responsibilityId: responsibilityId,
     actualStartAt: finalDate,
     source: source,
@@ -1754,7 +1753,10 @@ Future<void> showPastStartSelector(
         persist: false,
         action: SnackBarAction(
           label: 'DESHACER',
-          onPressed: () => service.undoStart(responsibilityId),
+          onPressed: () => service.undoStart(
+            responsibilityId,
+            activeStartEventId: startEventId,
+          ),
         ),
       ),
     );

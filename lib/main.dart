@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -11,7 +12,7 @@ import 'LoginScreen.dart';
 import 'HomeScreen.dart';
 import 'ResponsibilityService.dart';
 import 'VerificationNotificationService.dart';
-import 'Responsibility.dart' show StartSource;
+import 'Responsibility.dart' show ResponsibilityStatus, StartSource;
 import 'ConsentScreen.dart';
 import 'ConsentService.dart';
 import 'ThemeModeController.dart';
@@ -56,56 +57,99 @@ Future<void> _handleNotificationAction(
     String responsibilityId, String actionId) async {
   if (responsibilityId.isEmpty) return;
 
-  try {
-    await _responsibilityService.ensureResponsibilityActive(responsibilityId);
-  } on DiscardedResponsibilityException {
-    _showDiscardedMessage();
-    return;
-  } catch (e) {
-    debugPrint('Notification action precheck error: $e');
-    return;
-  }
-
-  try {
-    await _responsibilityService.logNotificationEvent(
+  unawaited(
+    _responsibilityService.logNotificationEvent(
       responsibilityId: responsibilityId,
       type: 'notification_action_received',
       actionSelected: actionId,
-    );
+    ).catchError((Object error) {
+      debugPrint('Telemetry error: ${error.runtimeType}');
+    }),
+  );
 
-    await _analytics.logEvent(
+  unawaited(
+    _analytics.logEvent(
       AnalyticsEvents.notificationActionReceived,
       parameters: {
         AnalyticsParams.responsibilityId: responsibilityId,
         AnalyticsParams.actionId: actionId,
       },
-    );
+    ).catchError((Object error) {
+      debugPrint('Analytics telemetry error: ${error.runtimeType}');
+    }),
+  );
 
-    await _analytics.logEvent(
+  unawaited(
+    _analytics.logEvent(
       AnalyticsEvents.notificationActionSelected,
       parameters: {
         AnalyticsParams.responsibilityId: responsibilityId,
         AnalyticsParams.actionId: actionId,
       },
-    );
-  } catch (e) {
-    debugPrint('Telemetry error for notification action: $e');
-  }
+    ).catchError((Object error) {
+      debugPrint('Analytics telemetry error: ${error.runtimeType}');
+    }),
+  );
 
   switch (actionId) {
     case VerificationAction.starting:
       try {
-        final didStart =
-        await _responsibilityService.markStartedIfNotAlready(
+        final responsibility =
+        await _responsibilityService.getCachedResponsibility(
+          responsibilityId,
+        );
+
+        if (responsibility == null) {
+          rootScaffoldMessengerKey.currentState
+            ?..hideCurrentSnackBar()
+            ..showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'No fue posible encontrar esta responsabilidad en el dispositivo. '
+                      'Conéctate a Internet e inténtalo nuevamente.',
+                ),
+              ),
+            );
+          break;
+        }
+
+        if (responsibility.status != ResponsibilityStatus.pending ||
+            responsibility.startedAt != null ||
+            responsibility.activeStartEventId != null) {
+          rootScaffoldMessengerKey.currentState
+            ?..hideCurrentSnackBar()
+            ..showSnackBar(
+              const SnackBar(
+                content: Text('Ya registraste el inicio de esta responsabilidad.'),
+              ),
+            );
+          break;
+        }
+
+        final startEventId = await _responsibilityService.markStartedIfNotAlready(
           responsibilityId: responsibilityId,
           actualStartAt: DateTime.now(),
           source: StartSource.reminderLive,
         );
-        if (didStart) {
-          _showGlobalUndo(responsibilityId);
+
+        if (startEventId != null) {
+          unawaited(
+            _notificationService
+                .cancelVerification(responsibilityId)
+                .catchError((Object error) {
+              debugPrint('Cancel notification error: ${error.runtimeType}');
+            }),
+          );
+
+          _showGlobalUndo(
+            responsibilityId,
+            activeStartEventId: startEventId,
+          );
         }
       } on DiscardedResponsibilityException {
         _showDiscardedMessage();
+      } catch (e) {
+        debugPrint('Start from notification error: ${e.runtimeType}');
       }
       break;
 
@@ -122,12 +166,15 @@ Future<void> _handleNotificationAction(
 void _showDiscardedMessage() {
   rootScaffoldMessengerKey.currentState?.showSnackBar(
     const SnackBar(
-      content: Text('Esta observación ya fue descartada.'),
+      content: Text('Esta responsabilidad ya fue descartada.'),
     ),
   );
 }
 
-void _showGlobalUndo(String responsibilityId) {
+void _showGlobalUndo(
+    String responsibilityId, {
+      required String activeStartEventId,
+    }) {
   WidgetsBinding.instance.addPostFrameCallback((_) {
     rootScaffoldMessengerKey.currentState?.hideCurrentSnackBar();
     rootScaffoldMessengerKey.currentState?.showSnackBar(
@@ -137,7 +184,16 @@ void _showGlobalUndo(String responsibilityId) {
         persist: false,
         action: SnackBarAction(
           label: 'DESHACER',
-          onPressed: () => _responsibilityService.undoStart(responsibilityId),
+          onPressed: () {
+            unawaited(
+              _responsibilityService.undoStart(
+                responsibilityId,
+                activeStartEventId: activeStartEventId,
+              ).catchError((Object error) {
+                debugPrint('Undo error: ${error.runtimeType}');
+              }),
+            );
+          },
         ),
       ),
     );
@@ -173,7 +229,22 @@ class _AuthGate extends StatefulWidget {
 }
 
 class _AuthGateState extends State<_AuthGate> {
+  final ConsentService _consentService = ConsentService();
+
   int _consentRetryCount = 0;
+  String? _consentStreamUserId;
+  Stream<DocumentSnapshot<Map<String, dynamic>>>? _consentStream;
+
+  Stream<DocumentSnapshot<Map<String, dynamic>>> _streamForConsent(
+      String userId,
+      ) {
+    if (_consentStream == null || _consentStreamUserId != userId) {
+      _consentStreamUserId = userId;
+      _consentStream = _consentService.watchConsent(userId);
+    }
+
+    return _consentStream!;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -189,6 +260,8 @@ class _AuthGateState extends State<_AuthGate> {
         final user = authSnapshot.data;
 
         if (user == null) {
+          _consentStreamUserId = null;
+          _consentStream = null;
           _analytics.setUser(null);
           return const LoginScreen();
         }
@@ -208,11 +281,9 @@ class _AuthGateState extends State<_AuthGate> {
   }
 
   Widget _buildConsentGate(String userId) {
-    final consentService = ConsentService();
-
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       key: ValueKey('consent_${userId}_$_consentRetryCount'),
-      stream: consentService.watchConsent(userId),
+      stream: _streamForConsent(userId),
       builder: (context, consentSnapshot) {
         if (consentSnapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
@@ -224,13 +295,15 @@ class _AuthGateState extends State<_AuthGate> {
           return _ConsentError(
             onRetry: () {
               setState(() {
+                _consentStreamUserId = null;
+                _consentStream = null;
                 _consentRetryCount++;
               });
             },
           );
         }
 
-        if (consentService.hasValidConsent(consentSnapshot.data)) {
+        if (_consentService.hasValidConsent(consentSnapshot.data)) {
           return const HomeScreen();
         }
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -42,6 +43,27 @@ class _AccountScreenState extends State<AccountScreen> {
           _isSigningOut ||
           _isLoadingConsent;
 
+  Future<bool> _canReachFirebaseAuth() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      return false;
+    }
+
+    try {
+      await user.reload().timeout(const Duration(seconds: 5));
+      return true;
+    } on TimeoutException catch (e) {
+      debugPrint('Auth reachability error: ${e.runtimeType}');
+      return false;
+    } on FirebaseAuthException catch (e) {
+      debugPrint('Auth reachability error: ${e.runtimeType}');
+      return false;
+    } catch (e) {
+      debugPrint('Auth reachability error: ${e.runtimeType}');
+      return false;
+    }
+  }
+
   Future<void> _resetPassword() async {
     if (_isBusy) return;
 
@@ -55,6 +77,13 @@ class _AccountScreenState extends State<AccountScreen> {
     setState(() => _isResettingPassword = true);
 
     try {
+      final canReach = await _canReachFirebaseAuth();
+      if (!canReach) {
+        _showMessage(
+            'Necesitas conexión a Internet para enviar el correo de restablecimiento.');
+        return;
+      }
+
       await FirebaseAuth.instance
           .sendPasswordResetEmail(email: email)
           .timeout(const Duration(seconds: 10));
@@ -74,6 +103,40 @@ class _AccountScreenState extends State<AccountScreen> {
 
   Future<void> _signOut() async {
     if (_isBusy) return;
+    if (_isSigningOut) return;
+
+    setState(() => _isSigningOut = true);
+
+    try {
+      await FirebaseFirestore.instance
+          .waitForPendingWrites()
+          .timeout(const Duration(seconds: 5));
+    } on TimeoutException catch (e) {
+      debugPrint('Pending writes check error: ${e.runtimeType}');
+      if (!mounted) return;
+      _showMessage(
+        'Hay cambios pendientes de sincronización. Conéctate a Internet antes de cerrar sesión.',
+      );
+      return;
+    } on FirebaseException catch (e) {
+      debugPrint('Pending writes check error: ${e.runtimeType}');
+      if (!mounted) return;
+      _showMessage(
+        'No pudimos comprobar si tus cambios se guardaron. Inténtalo nuevamente con conexión.',
+      );
+      return;
+    } catch (e) {
+      debugPrint('Pending writes check error: ${e.runtimeType}');
+      if (!mounted) return;
+      _showMessage(
+        'No pudimos comprobar si tus cambios se guardaron. Inténtalo nuevamente con conexión.',
+      );
+      return;
+    } finally {
+      if (mounted) setState(() => _isSigningOut = false);
+    }
+
+    if (!mounted) return;
 
     setState(() => _isSigningOut = true);
 
@@ -82,8 +145,9 @@ class _AccountScreenState extends State<AccountScreen> {
     } catch (e) {
       debugPrint('Sign out error: ${e.runtimeType}');
       if (!mounted) return;
-      setState(() => _isSigningOut = false);
       _showMessage('No se pudo cerrar sesión. Inténtalo nuevamente.');
+    } finally {
+      if (mounted) setState(() => _isSigningOut = false);
     }
   }
 
@@ -106,6 +170,12 @@ class _AccountScreenState extends State<AccountScreen> {
     setState(() => _isUpdatingName = true);
 
     try {
+      final canReach = await _canReachFirebaseAuth();
+      if (!canReach) {
+        _showMessage('Necesitas conexión a Internet para actualizar tu nombre.');
+        return;
+      }
+
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
         if (!mounted) return;

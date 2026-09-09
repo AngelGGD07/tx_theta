@@ -27,6 +27,7 @@ class Responsibility {
 
   DateTime? startedAt;
   StartSource? startSource;
+  String? activeStartEventId;
 
   DateTime? completedAt;
   DateTime? submittedAt;
@@ -45,6 +46,7 @@ class Responsibility {
     this.predictionStatus = 'declared',
     this.startedAt,
     this.startSource,
+    this.activeStartEventId,
     this.completedAt,
     this.submittedAt,
     this.status = ResponsibilityStatus.pending,
@@ -80,6 +82,7 @@ class Responsibility {
       startSource: d['startSource'] != null
           ? StartSource.values.byName(d['startSource'])
           : null,
+      activeStartEventId: d['activeStartEventId'] as String?,
       completedAt: d['completedAt'] != null
           ? (d['completedAt'] as Timestamp).toDate()
           : null,
@@ -104,6 +107,7 @@ class Responsibility {
       'predictionStatus': predictionStatus,
       'startedAt': startedAt != null ? Timestamp.fromDate(startedAt!) : null,
       'startSource': startSource?.name,
+      'activeStartEventId': activeStartEventId,
       'completedAt':
       completedAt != null ? Timestamp.fromDate(completedAt!) : null,
       'submittedAt':

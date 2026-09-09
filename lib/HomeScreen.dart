@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:BiPi/CaptureResponsibilityScreen.dart';
 
@@ -80,8 +81,6 @@ class _HomeScreenState extends State<HomeScreen> {
       if (action.actionId == VerificationAction.notYet) {
         await _processNotYet(action);
       }
-    } on DiscardedResponsibilityException {
-      _consumeDiscardedAction();
     } catch (error) {
       rootScaffoldMessengerKey.currentState
         ?..hideCurrentSnackBar()
@@ -94,8 +93,7 @@ class _HomeScreenState extends State<HomeScreen> {
         );
 
       debugPrint(
-        'Error procesando acción de notificación '
-            '${action.actionId}: $error',
+        'Notification action error: ${error.runtimeType}',
       );
     } finally {
       _isProcessingNotificationAction = false;
@@ -104,17 +102,47 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _processAlreadyStarted(
       PendingNotificationAction action) async {
-    try {
-      await _service.ensureResponsibilityActive(action.responsibilityId);
-    } on DiscardedResponsibilityException {
-      _consumeDiscardedAction();
+    final responsibility = await _service.getCachedResponsibility(
+      action.responsibilityId,
+    );
+
+    if (responsibility == null) {
+      rootScaffoldMessengerKey.currentState
+        ?..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No fue posible encontrar esta responsabilidad en el dispositivo. '
+                  'Conéctate a Internet e inténtalo nuevamente.',
+            ),
+          ),
+        );
       return;
     }
 
-    await _service.logNotificationEvent(
-      responsibilityId: action.responsibilityId,
-      type: 'notification_action_selected',
-      actionSelected: action.actionId,
+    if (responsibility.status != ResponsibilityStatus.pending ||
+        responsibility.startedAt != null ||
+        responsibility.activeStartEventId != null) {
+      rootScaffoldMessengerKey.currentState
+        ?..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Ya registraste el inicio de esta responsabilidad.'),
+          ),
+        );
+      return;
+    }
+
+    unawaited(
+      _service.logNotificationEvent(
+        responsibilityId: action.responsibilityId,
+        type: 'notification_action_selected',
+        actionSelected: action.actionId,
+      ).catchError((Object error) {
+        debugPrint(
+          'Notification event log error: ${error.runtimeType}',
+        );
+      }),
     );
 
     if (!mounted) {
@@ -131,21 +159,54 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _processNotYet(
       PendingNotificationAction action) async {
-    try {
-      await _service.ensureResponsibilityActive(action.responsibilityId);
-    } on DiscardedResponsibilityException {
-      _consumeDiscardedAction();
+    final responsibility = await _service.getCachedResponsibility(
+      action.responsibilityId,
+    );
+
+    if (responsibility == null ||
+        responsibility.predictedStartAt == null) {
+      rootScaffoldMessengerKey.currentState
+        ?..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No fue posible encontrar esta responsabilidad en el dispositivo. '
+                  'Conéctate a Internet e inténtalo nuevamente.',
+            ),
+          ),
+        );
+      return;
+    }
+
+    if (responsibility.status != ResponsibilityStatus.pending ||
+        responsibility.startedAt != null ||
+        responsibility.activeStartEventId != null) {
+      rootScaffoldMessengerKey.currentState
+        ?..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Ya registraste el inicio de esta responsabilidad.'),
+          ),
+        );
       return;
     }
 
     await _service.recordNotYetResponse(
       responsibilityId: action.responsibilityId,
+      predictedAt: responsibility.createdAt,
+      predictedStartAt: responsibility.predictedStartAt!,
     );
 
-    await _service.logNotificationEvent(
-      responsibilityId: action.responsibilityId,
-      type: 'notification_action_selected',
-      actionSelected: action.actionId,
+    unawaited(
+      _service.logNotificationEvent(
+        responsibilityId: action.responsibilityId,
+        type: 'notification_action_selected',
+        actionSelected: action.actionId,
+      ).catchError((Object error) {
+        debugPrint(
+          'Notification event log error: ${error.runtimeType}',
+        );
+      }),
     );
 
     rootScaffoldMessengerKey.currentState
@@ -156,16 +217,6 @@ class _HomeScreenState extends State<HomeScreen> {
             'Todavía no has comenzado. Conservamos tu predicción.',
           ),
           duration: Duration(seconds: 6),
-        ),
-      );
-  }
-
-  void _consumeDiscardedAction() {
-    rootScaffoldMessengerKey.currentState
-      ?..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(
-          content: Text('Esta responsabilidad ya fue descartada.'),
         ),
       );
   }
@@ -235,8 +286,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Text(
                     'No pudimos cargar tus responsabilidades. '
                         'Revisa tu conexión e inténtalo nuevamente.',
-                    style:
-                    AppTypography.body(color: palette.destructive),
+                    style: AppTypography.body(
+                        color: palette.destructive),
                     textAlign: TextAlign.center,
                   ),
                 ),

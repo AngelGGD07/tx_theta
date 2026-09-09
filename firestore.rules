@@ -28,9 +28,50 @@ service cloud.firestore {
         'predictionStatus',
         'startedAt',
         'startSource',
+        'activeStartEventId',
         'completedAt',
         'submittedAt',
         'status'
+      ]);
+    }
+
+    function validStartEventKeys() {
+      return request.resource.data.keys().hasAll([
+        'eventId',
+        'userId',
+        'responsibilityId',
+        'type',
+        'startedAt',
+        'startSource',
+        'recordedAt'
+      ])
+      && request.resource.data.keys().hasOnly([
+        'eventId',
+        'userId',
+        'responsibilityId',
+        'type',
+        'startedAt',
+        'startSource',
+        'recordedAt'
+      ]);
+    }
+
+    function validUndoEventKeys() {
+      return request.resource.data.keys().hasAll([
+        'eventId',
+        'userId',
+        'responsibilityId',
+        'type',
+        'startEventId',
+        'undoneAt'
+      ])
+      && request.resource.data.keys().hasOnly([
+        'eventId',
+        'userId',
+        'responsibilityId',
+        'type',
+        'startEventId',
+        'undoneAt'
       ]);
     }
 
@@ -110,10 +151,29 @@ service cloud.firestore {
       ]);
     }
 
+    function isValidStartSource(src) {
+      return src in [
+        'manualLive',
+        'manualRecalled',
+        'reminderLive',
+        'reminderRecalled'
+      ];
+    }
+
     function validRegularResponsibilityUpdate() {
       return validResponsibilityKeys()
         && resource.data.status != 'discarded'
-        && request.resource.data.status != 'discarded';
+        && request.resource.data.status != 'discarded'
+        && request.resource.data.diff(resource.data)
+            .affectedKeys()
+            .hasOnly([
+              'type',
+              'subject',
+              'description',
+              'dueAt',
+              'predictedStartAt',
+              'predictionStatus'
+            ]);
     }
 
     function validDiscardUpdate(docId) {
@@ -130,6 +190,84 @@ service cloud.firestore {
         );
     }
 
+    function validStartTransition(docId) {
+      return resource.data.status == 'pending'
+        && resource.data.startedAt == null
+        && (!resource.data.keys().hasAny(['activeStartEventId'])
+            || resource.data.activeStartEventId == null)
+        && request.resource.data.status == 'started'
+        && request.resource.data.startedAt is timestamp
+        && isValidStartSource(request.resource.data.startSource)
+        && request.resource.data.activeStartEventId is string
+        && request.resource.data.diff(resource.data)
+            .affectedKeys()
+            .hasOnly([
+              'status',
+              'startedAt',
+              'startSource',
+              'activeStartEventId'
+            ])
+        && getAfter(
+          /databases/$(database)/documents/prediction_events/
+              $(request.resource.data.activeStartEventId)
+        ).data.eventId == request.resource.data.activeStartEventId
+        && getAfter(
+          /databases/$(database)/documents/prediction_events/
+              $(request.resource.data.activeStartEventId)
+        ).data.userId == request.auth.uid
+        && getAfter(
+          /databases/$(database)/documents/prediction_events/
+              $(request.resource.data.activeStartEventId)
+        ).data.responsibilityId == docId
+        && getAfter(
+          /databases/$(database)/documents/prediction_events/
+              $(request.resource.data.activeStartEventId)
+        ).data.type == 'start_registered'
+        && getAfter(
+          /databases/$(database)/documents/prediction_events/
+              $(request.resource.data.activeStartEventId)
+        ).data.startedAt == request.resource.data.startedAt
+        && getAfter(
+          /databases/$(database)/documents/prediction_events/
+              $(request.resource.data.activeStartEventId)
+        ).data.startSource == request.resource.data.startSource;
+    }
+
+    function validUndoTransition(docId) {
+      let undoEventId = 'undo_' + docId + '_' + resource.data.activeStartEventId;
+
+      return resource.data.status == 'started'
+        && resource.data.startedAt is timestamp
+        && resource.data.activeStartEventId is string
+        && request.resource.data.status == 'pending'
+        && request.resource.data.startedAt == null
+        && request.resource.data.startSource == null
+        && request.resource.data.activeStartEventId == null
+        && request.resource.data.diff(resource.data)
+            .affectedKeys()
+            .hasOnly([
+              'status',
+              'startedAt',
+              'startSource',
+              'activeStartEventId'
+            ])
+        && getAfter(
+          /databases/$(database)/documents/prediction_events/$(undoEventId)
+        ).data.eventId == undoEventId
+        && getAfter(
+          /databases/$(database)/documents/prediction_events/$(undoEventId)
+        ).data.userId == request.auth.uid
+        && getAfter(
+          /databases/$(database)/documents/prediction_events/$(undoEventId)
+        ).data.responsibilityId == docId
+        && getAfter(
+          /databases/$(database)/documents/prediction_events/$(undoEventId)
+        ).data.type == 'start_undone'
+        && getAfter(
+          /databases/$(database)/documents/prediction_events/$(undoEventId)
+        ).data.startEventId == resource.data.activeStartEventId;
+    }
+
     match /responsibilities/{docId} {
       allow read: if isOwner(resource.data.userId);
 
@@ -143,6 +281,8 @@ service cloud.firestore {
         && (
           validRegularResponsibilityUpdate()
           || validDiscardUpdate(docId)
+          || validStartTransition(docId)
+          || validUndoTransition(docId)
         );
 
       allow delete: if false;
@@ -162,15 +302,46 @@ service cloud.firestore {
       allow create: if isVerifiedUser()
         && request.resource.data.userId == request.auth.uid
         && (
+          // not_started
           (
-            request.resource.data.response == 'not_started'
-            && validNotStartedKeys()
+            validNotStartedKeys()
+            && request.resource.data.response == 'not_started'
             && request.resource.data.eventId == docId
+            && docId == 'not_yet_' + request.resource.data.responsibilityId
+            && getAfter(
+              /databases/$(database)/documents/responsibilities/
+                  $(request.resource.data.responsibilityId)
+            ).data.userId == request.auth.uid
+            && getAfter(
+              /databases/$(database)/documents/responsibilities/
+                  $(request.resource.data.responsibilityId)
+            ).data.status == 'pending'
+            && getAfter(
+              /databases/$(database)/documents/responsibilities/
+                  $(request.resource.data.responsibilityId)
+            ).data.startedAt == null
+            && (!getAfter(
+              /databases/$(database)/documents/responsibilities/
+                  $(request.resource.data.responsibilityId)
+            ).data.keys().hasAny(['activeStartEventId'])
+                || getAfter(
+                  /databases/$(database)/documents/responsibilities/
+                      $(request.resource.data.responsibilityId)
+                ).data.activeStartEventId == null)
+            && getAfter(
+              /databases/$(database)/documents/responsibilities/
+                  $(request.resource.data.responsibilityId)
+            ).data.createdAt == request.resource.data.predictedAt
+            && getAfter(
+              /databases/$(database)/documents/responsibilities/
+                  $(request.resource.data.responsibilityId)
+            ).data.predictedStartAt == request.resource.data.predictedStartAt
           )
           ||
+          // prediction_corrected
           (
-            request.resource.data.response == 'prediction_corrected'
-            && validPredictionCorrectedKeys()
+            validPredictionCorrectedKeys()
+            && request.resource.data.response == 'prediction_corrected'
             && request.resource.data.eventId == docId
             && request.resource.data.previousPredictionStatus
                 in ['declared', 'unknown']
@@ -210,6 +381,71 @@ service cloud.firestore {
               || request.resource.data.newDueAt
                   > request.resource.data.newPredictedStartAt
             )
+          )
+          ||
+          // start_registered
+          (
+            validStartEventKeys()
+            && request.resource.data.type == 'start_registered'
+            && request.resource.data.eventId == docId
+            && request.resource.data.startedAt is timestamp
+            && request.resource.data.recordedAt is timestamp
+            && isValidStartSource(request.resource.data.startSource)
+            && getAfter(
+              /databases/$(database)/documents/responsibilities/
+                  $(request.resource.data.responsibilityId)
+            ).data.userId == request.auth.uid
+            && getAfter(
+              /databases/$(database)/documents/responsibilities/
+                  $(request.resource.data.responsibilityId)
+            ).data.status == 'started'
+            && getAfter(
+              /databases/$(database)/documents/responsibilities/
+                  $(request.resource.data.responsibilityId)
+            ).data.activeStartEventId == docId
+            && getAfter(
+              /databases/$(database)/documents/responsibilities/
+                  $(request.resource.data.responsibilityId)
+            ).data.startedAt == request.resource.data.startedAt
+            && getAfter(
+              /databases/$(database)/documents/responsibilities/
+                  $(request.resource.data.responsibilityId)
+            ).data.startSource == request.resource.data.startSource
+          )
+          ||
+          // start_undone
+          (
+            validUndoEventKeys()
+            && request.resource.data.type == 'start_undone'
+            && request.resource.data.eventId == docId
+            && request.resource.data.startEventId is string
+            && request.resource.data.undoneAt is timestamp
+            && docId == 'undo_' + request.resource.data.responsibilityId + '_'
+                + request.resource.data.startEventId
+            && existsAfter(
+              /databases/$(database)/documents/prediction_events/
+                  $(request.resource.data.startEventId)
+            )
+            && getAfter(
+              /databases/$(database)/documents/responsibilities/
+                  $(request.resource.data.responsibilityId)
+            ).data.userId == request.auth.uid
+            && getAfter(
+              /databases/$(database)/documents/responsibilities/
+                  $(request.resource.data.responsibilityId)
+            ).data.status == 'pending'
+            && getAfter(
+              /databases/$(database)/documents/responsibilities/
+                  $(request.resource.data.responsibilityId)
+            ).data.startedAt == null
+            && getAfter(
+              /databases/$(database)/documents/responsibilities/
+                  $(request.resource.data.responsibilityId)
+            ).data.startSource == null
+            && getAfter(
+              /databases/$(database)/documents/responsibilities/
+                  $(request.resource.data.responsibilityId)
+            ).data.activeStartEventId == null
           )
         );
 
