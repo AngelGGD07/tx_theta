@@ -235,6 +235,14 @@ class _AuthGateState extends State<_AuthGate> {
   String? _consentStreamUserId;
   Stream<DocumentSnapshot<Map<String, dynamic>>>? _consentStream;
 
+  late final Stream<User?> _authStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _authStream = FirebaseAuth.instance.idTokenChanges();
+  }
+
   Stream<DocumentSnapshot<Map<String, dynamic>>> _streamForConsent(
       String userId,
       ) {
@@ -246,10 +254,18 @@ class _AuthGateState extends State<_AuthGate> {
     return _consentStream!;
   }
 
+  void _invalidateConsentStream() {
+    setState(() {
+      _consentStreamUserId = null;
+      _consentStream = null;
+      _consentRetryCount++;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.userChanges(),
+      stream: _authStream,
       builder: (context, authSnapshot) {
         if (authSnapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
@@ -293,13 +309,7 @@ class _AuthGateState extends State<_AuthGate> {
 
         if (consentSnapshot.hasError) {
           return _ConsentError(
-            onRetry: () {
-              setState(() {
-                _consentStreamUserId = null;
-                _consentStream = null;
-                _consentRetryCount++;
-              });
-            },
+            onRetry: _invalidateConsentStream,
           );
         }
 

@@ -61,27 +61,60 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
 
     try {
       final user = _user;
-      if (user == null) return;
+      if (user == null) {
+        _showMessage(
+          'No pudimos confirmar la verificación. Revisa tu conexión e inténtalo nuevamente.',
+        );
+        return;
+      }
 
       await user.reload();
       if (!mounted) return;
 
       final refreshedUser = FirebaseAuth.instance.currentUser;
-      if (refreshedUser == null) return;
+      if (refreshedUser == null) {
+        _showMessage(
+          'No pudimos confirmar la verificación. Revisa tu conexión e inténtalo nuevamente.',
+        );
+        return;
+      }
 
       if (!refreshedUser.emailVerified) {
         _showMessage('El correo todavía no aparece como verificado.');
         return;
       }
 
-      await refreshedUser.getIdToken(true);
-      await refreshedUser.reload();
+      await refreshedUser
+          .getIdToken(true)
+          .timeout(const Duration(seconds: 10));
 
       // AuthGate con userChanges reaccionará y mostrará ConsentGate.
-    } catch (e) {
-      debugPrint('Email verification check error: $e');
+    } on TimeoutException catch (error) {
+      debugPrint(
+        'Email verification refresh error: ${error.runtimeType}',
+      );
       if (mounted) {
-        _showMessage('No fue posible verificar tu correo. Inténtalo nuevamente.');
+        _showMessage(
+          'No pudimos confirmar la verificación. Revisa tu conexión e inténtalo nuevamente.',
+        );
+      }
+    } on FirebaseAuthException catch (error) {
+      debugPrint(
+        'Email verification refresh error: ${error.runtimeType}',
+      );
+      if (mounted) {
+        _showMessage(
+          'No pudimos confirmar la verificación. Revisa tu conexión e inténtalo nuevamente.',
+        );
+      }
+    } catch (error) {
+      debugPrint(
+        'Email verification refresh error: ${error.runtimeType}',
+      );
+      if (mounted) {
+        _showMessage(
+          'No pudimos confirmar la verificación. Revisa tu conexión e inténtalo nuevamente.',
+        );
       }
     } finally {
       if (mounted) setState(() => _isChecking = false);
@@ -105,7 +138,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
 
       _startCooldown();
     } on FirebaseAuthException catch (e) {
-      debugPrint('Resend verification error: $e');
+      debugPrint('Resend verification error: ${e.runtimeType}');
       if (!mounted) return;
       if (e.code == 'too-many-requests') {
         _showMessage(
@@ -118,7 +151,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
             'No fue posible solicitar otro enlace. Inténtalo nuevamente.');
       }
     } catch (e) {
-      debugPrint('Resend verification error: $e');
+      debugPrint('Resend verification error: ${e.runtimeType}');
       if (mounted) {
         _showMessage(
             'No fue posible solicitar otro enlace. Inténtalo nuevamente.');
