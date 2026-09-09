@@ -363,7 +363,7 @@ class _LoginScreenState extends State<LoginScreen>
         if (!mounted) return;
       }
     } catch (e) {
-      debugPrint('Auth error: $e');
+      debugPrint('Auth error: ${e.runtimeType}');
       if (!mounted) return;
       _showMessage(_friendlyAuthError(e));
     } finally {
@@ -400,7 +400,7 @@ class _LoginScreenState extends State<LoginScreen>
         isNewUser ? _t('account_created') : _t('welcome_back'),
       );
     } catch (e) {
-      debugPrint('Auth error: $e');
+      debugPrint('Auth error: ${e.runtimeType}');
       if (!mounted) return;
       _showMessage(_friendlyAuthError(e));
     } finally {
@@ -510,6 +510,14 @@ class _LoginScreenState extends State<LoginScreen>
     });
   }
 
+  void _toggleFormMode() {
+    if (_isLoading) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      _isLogin = !_isLogin;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette.of(context);
@@ -599,21 +607,72 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Widget _buildAnimatedForm(AppPalette palette) {
+    final disableAnimations = WidgetsBinding
+        .instance
+        .platformDispatcher
+        .accessibilityFeatures
+        .disableAnimations;
+
+    final duration = disableAnimations
+        ? Duration.zero
+        : const Duration(milliseconds: 520);
+    final curve = disableAnimations ? Curves.linear : Curves.easeInOutQuart;
+
     return ClipRect(
       child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 280),
-        switchInCurve: Curves.easeInOutCubic,
-        switchOutCurve: Curves.easeInOutCubic,
+        duration: duration,
+        switchInCurve: curve,
+        switchOutCurve: curve,
+        layoutBuilder: (currentChild, previousChildren) {
+          return Stack(
+            alignment: Alignment.topCenter,
+            children: [
+              ...previousChildren,
+              if (currentChild != null) currentChild,
+            ],
+          );
+        },
         transitionBuilder: (child, animation) {
+          if (disableAnimations) {
+            return child;
+          }
+
           final childKey = child.key as ValueKey<bool>;
-          final isEntering = childKey.value == _isLogin;
-          final Offset edgeOffset = isEntering
-              ? const Offset(-0.06, 0)
-              : const Offset(0.06, 0);
-          final slide =
-          Tween<Offset>(begin: edgeOffset, end: Offset.zero)
-              .animate(animation);
-          return SlideTransition(position: slide, child: child);
+          final Offset horizontalOffset = childKey.value
+              ? const Offset(-0.32, 0) // login: enters from left
+              : const Offset(0.32, 0); // registro: enters from right
+
+          final slide = Tween<Offset>(
+            begin: horizontalOffset,
+            end: Offset.zero,
+          ).animate(
+            CurvedAnimation(parent: animation, curve: curve),
+          );
+
+          final isCurrentForm = childKey.value == _isLogin;
+
+          final fade = isCurrentForm
+              ? Tween<double>(
+            begin: 0.0,
+            end: 1.0,
+          ).animate(animation)
+              : Tween<double>(
+            begin: 0.0,
+            end: 1.0,
+          ).chain(
+            CurveTween(
+              curve: const Interval(
+                0.70,
+                1.0,
+                curve: Curves.easeIn,
+              ),
+            ),
+          ).animate(animation);
+
+          return FadeTransition(
+            opacity: fade,
+            child: SlideTransition(position: slide, child: child),
+          );
         },
         child: Column(
           key: ValueKey<bool>(_isLogin),
@@ -714,9 +773,7 @@ class _LoginScreenState extends State<LoginScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextButton(
-                  onPressed: _isLoading
-                      ? null
-                      : () => setState(() => _isLogin = !_isLogin),
+                  onPressed: _isLoading ? null : _toggleFormMode,
                   style: TextButton.styleFrom(
                     visualDensity: VisualDensity.compact,
                   ),
